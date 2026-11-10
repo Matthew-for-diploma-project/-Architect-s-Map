@@ -121,6 +121,10 @@
     "accepted_on": "2026-11-11",
     "completion_base_commit_sha": "ee0878f5f30190a1d301f730e880650e72f90a2d",
     "integrated_main_commit_sha": "9bf7432148b0ec8f99b3db42dbfbb34330fe008a",
-    "completion_commit_message": "ui: complete P02 browser acceptance"
+    "completion_commit_message": "ui: complete P02 browser acceptance",
+    "tag_status": "local_only: GitHub ref is absent; git push has no credentials and the connector does not expose tag creation",
+    "tag_target_commit_sha": "e3225e869e58ed2f5aa10a58a2d549b62551c704",
+    "merged_pull_request_url": "https://github.com/Matthew-for-diploma-project/-Architect-s-Map/pull/1",
+    "merge_commit_sha": "e3225e869e58ed2f5aa10a58a2d549b62551c704"
   }
 }
