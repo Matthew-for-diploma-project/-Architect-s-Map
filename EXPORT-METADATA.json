@@ -98,7 +98,7 @@
   "current_application": {
     "iteration": 14,
     "plan_step": "P02",
-    "updated_on": "2026-11-10",
+    "updated_on": "2026-11-11",
     "date_timezone": "Europe/Moscow",
     "base_commit_sha": "1f1c6a568501b15cbb252635275b26482437108a",
     "branch": "iteration-014-p02-clean-header",
@@ -113,9 +113,14 @@
       "original_tests_passed": 13,
       "original_tests_failed": 0,
       "worker_html_js": "passed",
-      "browser_qa": "blocked: remote browser cannot reach local server; local Chromium socket() denied by environment",
-      "live_external_sources": "not verified",
-      "plan_step_complete": false
-    }
+      "browser_qa": "passed: Chromium at 1363, 375 and 320 CSS pixels; header, address/parcel search, both panels and about drawer",
+      "live_external_sources": "Observed: Leaflet CDN, OpenStreetMap tiles, CoGIS raster/parcel query and Nominatim address search. Live NSPD success not independently confirmed; Esri/OpenTopoMap not tested.",
+      "plan_step_complete": true,
+      "browser_qa_method": "Unmodified Worker; desktop viewport and fixed-width iframe viewports. Not a physical mobile device test."
+    },
+    "accepted_on": "2026-11-11",
+    "completion_base_commit_sha": "ee0878f5f30190a1d301f730e880650e72f90a2d",
+    "integrated_main_commit_sha": "9bf7432148b0ec8f99b3db42dbfbb34330fe008a",
+    "completion_commit_message": "ui: complete P02 browser acceptance"
   }
 }
