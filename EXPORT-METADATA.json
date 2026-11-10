@@ -94,5 +94,28 @@
     "history_clone_and_iteration_mapping": "passed",
     "browser_qa": "unverified: managed preview relay unavailable",
     "live_external_sources": "not verified"
+  },
+  "current_application": {
+    "iteration": 14,
+    "plan_step": "P02",
+    "updated_on": "2026-11-10",
+    "date_timezone": "Europe/Moscow",
+    "base_commit_sha": "1f1c6a568501b15cbb252635275b26482437108a",
+    "branch": "iteration-014-p02-clean-header",
+    "tag": "iteration-014",
+    "commit_message": "ui: remove header tagline for P02",
+    "change": "Remove the header tagline and its unused CSS according to the P02 details at the base commit.",
+    "application_source_modified": true,
+    "sites_version_created": false,
+    "source_integrity_scope": "Original iteration 13; manifest is unchanged.",
+    "validation": {
+      "build": "passed",
+      "original_tests_passed": 13,
+      "original_tests_failed": 0,
+      "worker_html_js": "passed",
+      "browser_qa": "blocked: remote browser cannot reach local server; local Chromium socket() denied by environment",
+      "live_external_sources": "not verified",
+      "plan_step_complete": false
+    }
   }
 }
