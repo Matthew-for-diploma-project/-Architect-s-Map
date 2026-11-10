@@ -1,0 +1,85 @@
+{
+  "iteration": 13,
+  "algorithm": "sha256",
+  "source_commit_sha": "4f14e4d09ce62f48c864da0e6bffd635077713b4",
+  "files": [
+    {
+      "source_path": ".openai/hosting.json",
+      "export_path": ".openai/hosting.json",
+      "sha256": "cfc02b4d80cdd200e4b4b2fbef1315512ad210ec3de37ab8b85f935f9b95136f",
+      "size_bytes": 58
+    },
+    {
+      "source_path": "README.md",
+      "export_path": "docs/README-original.md",
+      "sha256": "47ab3d8354cfc75de14a219dc7a63c8c308e47d4ffbdd4e6d409d01285849001",
+      "size_bytes": 5368
+    },
+    {
+      "source_path": "build.mjs",
+      "export_path": "build.mjs",
+      "sha256": "330ce645552be29340e7e1aea1818b32dd3f410eb5103b9331f2aac68d4c87b3",
+      "size_bytes": 1602
+    },
+    {
+      "source_path": "dist/.openai/hosting.json",
+      "export_path": "dist/.openai/hosting.json",
+      "sha256": "cfc02b4d80cdd200e4b4b2fbef1315512ad210ec3de37ab8b85f935f9b95136f",
+      "size_bytes": 58
+    },
+    {
+      "source_path": "dist/server/index.js",
+      "export_path": "dist/server/index.js",
+      "sha256": "61c1a0d48b12d8f9fe806d943dc8db81df8378b782136890bd525763ab353f56",
+      "size_bytes": 2209206
+    },
+    {
+      "source_path": "package.json",
+      "export_path": "package.json",
+      "sha256": "d1cb4247292a0cd3db1523f327046547ad41c8060d5c118ec4a72c938fa02831",
+      "size_bytes": 129
+    },
+    {
+      "source_path": "src/app.js",
+      "export_path": "src/app.js",
+      "sha256": "fae671800868803e194c5e086e14fd169f2dcd5b25ab74531f2dd38d6fa478df",
+      "size_bytes": 35513
+    },
+    {
+      "source_path": "src/genplan-calibration.mjs",
+      "export_path": "src/genplan-calibration.mjs",
+      "sha256": "79d3e5991c5d7e6bc039c5d846de975c24b7584eb13da9bcbcdf8a722c500de0",
+      "size_bytes": 3035
+    },
+    {
+      "source_path": "src/genplan.jpg",
+      "export_path": "src/genplan.jpg",
+      "sha256": "2e596029e873ab1eb086c644f9526f3379b735f6053352c9070d99a52c8e489c",
+      "size_bytes": 1600719
+    },
+    {
+      "source_path": "src/geo.mjs",
+      "export_path": "src/geo.mjs",
+      "sha256": "cc2c3b43bcb4ca29fd6f74ebcf034d6d995a0d84c82e9a6591f32d4469ed376f",
+      "size_bytes": 4172
+    },
+    {
+      "source_path": "src/index.html",
+      "export_path": "src/index.html",
+      "sha256": "9dd6523f0eccc13649a0578a733d9f887f67e72faa7ca7c907d7e3de8db3f14e",
+      "size_bytes": 20609
+    },
+    {
+      "source_path": "src/server.mjs",
+      "export_path": "src/server.mjs",
+      "sha256": "899ff770dc2b60c6018a7c31cb37a104b7beded89a98b549fae1b83d715bf04b",
+      "size_bytes": 9700
+    },
+    {
+      "source_path": "tests/data.test.mjs",
+      "export_path": "tests/data.test.mjs",
+      "sha256": "4423698d94da751a8d07559334e2187a5c56261101c1254923993a359b708c63",
+      "size_bytes": 8181
+    }
+  ]
+}

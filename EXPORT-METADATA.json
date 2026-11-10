@@ -1,0 +1,98 @@
+{
+  "export_format_version": 1,
+  "iteration": 13,
+  "export_revision": 1,
+  "exported_on": "2026-11-02",
+  "date_timezone": "Europe/Moscow",
+  "source_site_url": "https://geokontekst-ryazan.gomaruz75.chatgpt.site/",
+  "source_project_id": "appgprj_6aa686e38bcc8191aca42c2664eba255",
+  "source_commit_sha": "4f14e4d09ce62f48c864da0e6bffd635077713b4",
+  "source_saved_version_id": "appgprj_6aa686e38bcc8191aca42c2664eba255~appgver_1e04cfb5fb4c8191bb372e7dace3945e",
+  "target_repository_url": "https://github.com/Matthew-for-diploma-project/-Architect-s-Map",
+  "github_write_performed": false,
+  "application_source_modified": false,
+  "original_readme_export_path": "docs/README-original.md",
+  "source_history_bundle": "history/geokontekst-source-iterations-001-013.bundle",
+  "source_history_complete": true,
+  "saved_versions": [
+    {
+      "iteration": 13,
+      "source_commit_sha": "4f14e4d09ce62f48c864da0e6bffd635077713b4",
+      "saved_version_id": "appgprj_6aa686e38bcc8191aca42c2664eba255~appgver_1e04cfb5fb4c8191bb372e7dace3945e"
+    },
+    {
+      "iteration": 12,
+      "source_commit_sha": "d8fb1c14692fdf317ed849edcabc2c88e60c4aef",
+      "saved_version_id": "appgprj_6aa686e38bcc8191aca42c2664eba255~appgver_45454dc050b08191889919d14ef1229e"
+    },
+    {
+      "iteration": 11,
+      "source_commit_sha": "90e83b26179ca347f0623e9a028b1ad2ee7010b2",
+      "saved_version_id": "appgprj_6aa686e38bcc8191aca42c2664eba255~appgver_af598a7bacf48191b687f83bd7246c7a"
+    },
+    {
+      "iteration": 10,
+      "source_commit_sha": "c8ef96ce6e1ffec2bc886f65c5cb41b171f5c5ef",
+      "saved_version_id": "appgprj_6aa686e38bcc8191aca42c2664eba255~appgver_545c17645b148191a4508a518a0e6661"
+    },
+    {
+      "iteration": 9,
+      "source_commit_sha": "70ba0bf93b7aca157796151d9a03d391889db86c",
+      "saved_version_id": "appgprj_6aa686e38bcc8191aca42c2664eba255~appgver_5f4a59cada3c8191b7aea5b89270295a"
+    },
+    {
+      "iteration": 8,
+      "source_commit_sha": "f77a7fd014df886716d3361f16463ff8d710c7c5",
+      "saved_version_id": "appgprj_6aa686e38bcc8191aca42c2664eba255~appgver_95172b25fb50819197d05b7ee3f8915f"
+    },
+    {
+      "iteration": 7,
+      "source_commit_sha": "4ce7499a8f71dad344c52aee37667343449d2bb0",
+      "saved_version_id": "appgprj_6aa686e38bcc8191aca42c2664eba255~appgver_829543bd858c8191ae332e2dffdaf225"
+    },
+    {
+      "iteration": 6,
+      "source_commit_sha": "9d9f84dc4249ffa002f09f8c0f79e877f0d99803",
+      "saved_version_id": "appgprj_6aa686e38bcc8191aca42c2664eba255~appgver_e1cfec224b788191a8b4bc324a78306c"
+    },
+    {
+      "iteration": 5,
+      "source_commit_sha": "c0e441834866a813cd42b2d2f7a82e6e8d9f0666",
+      "saved_version_id": "appgprj_6aa686e38bcc8191aca42c2664eba255~appgver_137244bc3ec881918ff7c99996d51bac"
+    },
+    {
+      "iteration": 4,
+      "source_commit_sha": "ccfc5f40a93d720f6e9b9bb4f7e84d6c514f6369",
+      "saved_version_id": "appgprj_6aa686e38bcc8191aca42c2664eba255~appgver_5ef60106549c8191bb9400aa2240e809"
+    },
+    {
+      "iteration": 3,
+      "source_commit_sha": "591fcf549d297cfb81bf2222dbf2bca3bd08a7f4",
+      "saved_version_id": "appgprj_6aa686e38bcc8191aca42c2664eba255~appgver_41d883cb3cac81918c647511b2c0d8fe"
+    },
+    {
+      "iteration": 2,
+      "source_commit_sha": "793c1932469f09f67363b98693fe99116551a0f1",
+      "saved_version_id": "appgprj_6aa686e38bcc8191aca42c2664eba255~appgver_8bfb4edcb4188191b7377bb1c669776b"
+    },
+    {
+      "iteration": 1,
+      "source_commit_sha": "d487d7d5701a5de137ad6160798fc57be1719f83",
+      "saved_version_id": "appgprj_6aa686e38bcc8191aca42c2664eba255~appgver_7f41bf0ee5c48191b26bfa1a43773c54"
+    }
+  ],
+  "source_history_bundle_sha256": "5bdbee57c2b8fc4089485d70ac86e11e7aac2a3fb9bab605f1d25fd1d87ff7ca",
+  "source_history_bundle_size_bytes": 17667656,
+  "source_publication_status": "succeeded",
+  "source_publication_updated_at": "2026-10-11T15:27:53.871776+00:00",
+  "validation": {
+    "build": "passed",
+    "original_tests_passed": 13,
+    "original_tests_failed": 0,
+    "original_files_matched": 13,
+    "http_adapter_checks_passed": 12,
+    "history_clone_and_iteration_mapping": "passed",
+    "browser_qa": "unverified: managed preview relay unavailable",
+    "live_external_sources": "not verified"
+  }
+}

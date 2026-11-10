@@ -1,0 +1,14 @@
+# Local dependencies and temporary runtime state. dist/ is intentionally tracked.
+node_modules/
+.wrangler/
+.sites-runtime/
+.sites-checkout/
+coverage/
+*.log
+.DS_Store
+Thumbs.db
+.env
+.env.*
+!.env.example
+*.pem
+*.key
