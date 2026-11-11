@@ -21,7 +21,7 @@ const routes = [
 ];
 
 // null means the request still belongs to the original Worker. Nothing is read.
-// beforeHandle is reserved for Origin/session checks: it runs before any body.
+// Production passes its Origin/session guard; it runs before any body or ID.
 // Implemented handlers receive a bounded, decoded body; field/file validation is
 // their responsibility. Multipart decoding and image validation belong to P18.
 export function createNodeApiHandler({ database, handlers = {}, beforeHandle } = {}) {
@@ -38,11 +38,6 @@ export function createNodeApiHandler({ database, handlers = {}, beforeHandle } =
       const [action, bodyType, bodyLimit] = route.methods[method];
       const match = route.pattern.exec(url.pathname);
       const params = {};
-      if (match[1]) {
-        try { params.id = decodeURIComponent(match[1]); }
-        catch { throw new ApiError('VALIDATION_ERROR'); }
-        if (params.id.includes('/')) throw new ApiError('VALIDATION_ERROR');
-      }
       const headers = new Headers();
       for (const [name, value] of Object.entries(incoming.headers)) {
         if (Array.isArray(value)) value.forEach(item => headers.append(name, item));
@@ -50,8 +45,17 @@ export function createNodeApiHandler({ database, handlers = {}, beforeHandle } =
       }
       const context = { action, method, url, headers, params, isPrivate: !!route.private, bodyLimit, database, signal };
       context.auth = await beforeHandle?.(context);
+      // Fail closed even if a new entry point forgets to attach its guard.
+      if (route.private && (typeof context.auth?.user?.id !== 'string' || !context.auth.user.id)) {
+        throw new ApiError('AUTH_REQUIRED');
+      }
+      if (match[1]) {
+        try { params.id = decodeURIComponent(match[1]); }
+        catch { throw new ApiError('VALIDATION_ERROR'); }
+        if (params.id.includes('/')) throw new ApiError('VALIDATION_ERROR');
+      }
       const handler = Object.hasOwn(handlers, action) ? handlers[action] : undefined;
-      // Until P08 and the private handlers exist, reject without reading uploads.
+      // Authorized requests still reject before uploads until handlers exist.
       if (route.private && typeof handler !== 'function') throw new ApiError('NOT_IMPLEMENTED');
       if (bodyType === 'json') context.body = await readJsonBody(incoming, bodyLimit);
       else {

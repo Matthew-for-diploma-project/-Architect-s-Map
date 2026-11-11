@@ -5,6 +5,9 @@ import http from 'node:http';
 import { createDatabase } from '../src/backend/database.mjs';
 import { createNodeApiHandler } from '../src/backend/router.mjs';
 import { createRequestHandler } from '../src/backend/http-adapter.mjs';
+import { readAuthConfig } from '../src/backend/auth-config.mjs';
+import { createSessionService } from '../src/backend/sessions.mjs';
+import { createAuthenticationGuard } from '../src/backend/authentication.mjs';
 
 const major = Number(process.versions.node.split('.')[0]);
 if (major < 22) {
@@ -43,18 +46,22 @@ if (!Number.isInteger(port) || port < 0 || port > 65535) {
 }
 
 let database;
+let authConfig;
 try {
   database = createDatabase();
+  authConfig = readAuthConfig();
   await database.checkConnection();
 } catch (error) {
-  console.error(error.code === 'DATABASE_CONFIG_INVALID' ? error.message : 'PostgreSQL недоступна. Проверьте запуск БД и серверные настройки подключения.');
+  console.error(['DATABASE_CONFIG_INVALID', 'AUTH_CONFIG_INVALID'].includes(error.code)
+    ? error.message : 'PostgreSQL недоступна. Проверьте запуск БД и серверные настройки подключения.');
   await database?.close();
   process.exit(1);
 }
 
+const sessions = createSessionService({ database, config: authConfig });
 const server = http.createServer(createRequestHandler({
   worker,
-  nodeApi: createNodeApiHandler({ database }),
+  nodeApi: createNodeApiHandler({ database, beforeHandle: createAuthenticationGuard({ sessions, config: authConfig }) }),
 }));
 
 server.on('error', error => {

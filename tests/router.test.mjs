@@ -21,6 +21,7 @@ async function errorCode(response, status, code) {
   return value;
 }
 const jsonHeaders = { 'content-type': 'application/json' };
+const testIdentity = () => ({ user: { id: 'verified-test-user' } });
 
 test('all eleven method/path contracts reach their handler with private response headers', async () => {
   const cases = [
@@ -39,7 +40,7 @@ test('all eleven method/path contracts reach their handler with private response
   const signal = new AbortController().signal;
   for (const [method, path, action, body, headers = {}] of cases) {
     let calls = 0;
-    const handle = createNodeApiHandler({ database, handlers: { [action]: context => {
+    const handle = createNodeApiHandler({ database, beforeHandle: testIdentity, handlers: { [action]: context => {
       calls++;
       assert.equal(context.action, action);
       assert.equal(context.method, method);
@@ -94,7 +95,7 @@ test('wrong methods return 405 and an exact Allow list before guards or body rea
   assert.equal(guardCalls, 0);
 });
 
-test('unfinished operations explicitly return 501 and private stubs do not read uploads', async () => {
+test('unfinished public operations return 501 and private guests fail before uploads', async () => {
   const handle = createNodeApiHandler();
   for (const [method, path, chunks, headers] of [
     ['POST', '/api/auth/login', ['{}'], jsonHeaders],
@@ -103,7 +104,7 @@ test('unfinished operations explicitly return 501 and private stubs do not read 
   ]) await errorCode(await handle(request(method, path, chunks, headers)), 501, 'NOT_IMPLEMENTED');
   for (const [method, path] of [['POST', '/api/images'], ['PATCH', '/api/images/id'], ['GET', '/api/layer-settings']]) {
     const incoming = request(method, path, ['must not read'], { 'content-length': '999999999' });
-    await errorCode(await handle(incoming), 501, 'NOT_IMPLEMENTED');
+    await errorCode(await handle(incoming), 401, 'AUTH_REQUIRED');
     assert.equal(incoming.readableFlowing, null);
   }
 });
@@ -119,8 +120,8 @@ test('Origin/session hook rejects before body/media parsing and passes auth stat
   assert.equal(incoming.readableFlowing, null);
   assert.equal(called, false);
   const allowed = createNodeApiHandler({
-    beforeHandle() { return { userId: 'verified' }; },
-    handlers: { 'images.list': context => Response.json({ owner: context.auth.userId }) },
+    beforeHandle() { return { user: { id: 'verified' } }; },
+    handlers: { 'images.list': context => Response.json({ owner: context.auth.user.id }) },
   });
   assert.deepEqual(await (await allowed(request('GET', '/api/images'))).json(), { owner: 'verified' });
 });
@@ -159,7 +160,7 @@ test('account JSON limit is inclusive and counts UTF-8 bytes with or without Con
 test('PATCH limits are 8 KiB and multipart total limit is 21 MiB before handler decoding', async () => {
   let calls = 0;
   const accept = () => { calls++; return new Response(null, { status: 204 }); };
-  const handle = createNodeApiHandler({ handlers: {
+  const handle = createNodeApiHandler({ beforeHandle: testIdentity, handlers: {
     'images.update': accept, 'layerSettings.update': accept, 'images.create': accept,
   } });
   const exactJson = '{"x":"' + 'a'.repeat(8192 - 8) + '"}';
@@ -177,7 +178,7 @@ test('PATCH limits are 8 KiB and multipart total limit is 21 MiB before handler 
 
 test('zero-body contracts reject actual bytes and forged lengths do not bypass counting', async () => {
   const accept = () => new Response(null, { status: 204 });
-  const handle = createNodeApiHandler({ handlers: { 'images.list': accept, 'images.delete': accept } });
+  const handle = createNodeApiHandler({ beforeHandle: testIdentity, handlers: { 'images.list': accept, 'images.delete': accept } });
   for (const [method, path] of [['GET', '/api/images'], ['DELETE', '/api/images/id'], ['POST', '/api/auth/logout']]) {
     await errorCode(await handle(request(method, path, ['x'])), 413, 'PAYLOAD_TOO_LARGE');
   }
@@ -218,7 +219,7 @@ test('public errors use the common contract; unexpected handler failures never e
 });
 
 test('dynamic path decoding is bounded by a path segment and rejects malformed escapes', async () => {
-  const handle = createNodeApiHandler({ handlers: { 'images.file': context => Response.json({ id: context.params.id }) } });
+  const handle = createNodeApiHandler({ beforeHandle: testIdentity, handlers: { 'images.file': context => Response.json({ id: context.params.id }) } });
   assert.deepEqual(await (await handle(request('GET', '/api/images/%31%32%33/file'))).json(), { id: '123' });
   for (const path of ['/api/images/%ZZ/file', '/api/images/a%2Fb/file']) {
     await errorCode(await handle(request('GET', path)), 400, 'VALIDATION_ERROR');

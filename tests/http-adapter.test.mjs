@@ -56,8 +56,8 @@ test('HTTP adapter routes new namespaces first and preserves Worker resources an
   assert.equal(wrongOld.status, 405);
   assert.deepEqual(JSON.parse(wrongOld.bytes), { error: 'Только GET' });
   const newApi = await send(port, { path: '/api/images' });
-  assert.equal(newApi.status, 501);
-  assert.equal(JSON.parse(newApi.bytes).error.code, 'NOT_IMPLEMENTED');
+  assert.equal(newApi.status, 401);
+  assert.equal(JSON.parse(newApi.bytes).error.code, 'AUTH_REQUIRED');
   assert.equal(newApi.headers['cache-control'], 'private, no-store');
   const unknownNew = await send(port, { path: '/api/auth/missing' });
   assert.equal(unknownNew.status, 404);
