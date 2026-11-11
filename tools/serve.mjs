@@ -9,6 +9,7 @@ import { readAuthConfig } from '../src/backend/auth-config.mjs';
 import { createSessionService } from '../src/backend/sessions.mjs';
 import { createAuthenticationGuard } from '../src/backend/authentication.mjs';
 import { createRegistrationHandler } from '../src/backend/registration.mjs';
+import { createLoginHandler } from '../src/backend/login.mjs';
 
 const major = Number(process.versions.node.split('.')[0]);
 if (major < 22) {
@@ -65,7 +66,10 @@ const server = http.createServer(createRequestHandler({
   nodeApi: createNodeApiHandler({
     database,
     beforeHandle: createAuthenticationGuard({ sessions, config: authConfig }),
-    handlers: { 'auth.register': createRegistrationHandler({ database, sessions }) },
+    handlers: {
+      'auth.register': createRegistrationHandler({ database, sessions }),
+      'auth.login': createLoginHandler({ database, sessions }),
+    },
   }),
 }));
 

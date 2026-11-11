@@ -265,3 +265,55 @@ test('running Node registers an account, sets a working cookie and safely reject
     await database.close();
   }
 });
+
+test('running Node logs in with normalized email, rotates cookies and gives identical safe credential errors', async () => {
+  const database = createDatabase(), email = randomUUID() + '@example.test';
+  const password = '  P10 process fixture password 🔑  ';
+  let adapter;
+  try {
+    adapter = await startAdapter();
+    assert.ok(adapter.url, adapter.output());
+    const send = (action, body, cookie) => fetch(adapter.url + '/api/auth/' + action, {
+      method: 'POST', headers: { Origin: publicOrigin, 'Content-Type': 'application/json', ...(cookie ? { Cookie: cookie } : {}) },
+      body: JSON.stringify(body),
+    });
+    const registered = await send('register', { email, password, name: 'P10 пользователь' });
+    assert.equal(registered.status, 201);
+    const oldCookie = registered.headers.get('set-cookie').split(';')[0];
+    const profile = (await registered.json()).user;
+    const loggedIn = await send('login', { email: ' ' + email.toUpperCase() + ' ', password }, oldCookie);
+    assert.equal(loggedIn.status, 200);
+    assert.equal(loggedIn.headers.get('cache-control'), 'private, no-store');
+    assert.deepEqual(await loggedIn.json(), { user: profile });
+    let cookie = loggedIn.headers.get('set-cookie').split(';')[0];
+    assert.notEqual(cookie, oldCookie);
+    assert.equal((await fetch(adapter.url + '/api/images', { headers: { Cookie: oldCookie } })).status, 401);
+    assert.equal((await fetch(adapter.url + '/api/images', { headers: { Cookie: cookie } })).status, 501);
+    const errors = [];
+    for (const body of [{ email, password: 'Wrong P10 fixture password' }, { email: randomUUID() + '@example.test', password }]) {
+      const response = await send('login', body, cookie);
+      assert.equal(response.status, 401);
+      assert.equal(response.headers.get('set-cookie'), null);
+      errors.push(await response.text());
+    }
+    assert.equal(errors[0], errors[1]);
+    assert.equal(JSON.parse(errors[0]).error.code, 'INVALID_CREDENTIALS');
+    const again = await send('login', { email, password }, cookie);
+    assert.equal(again.status, 200);
+    const nextCookie = again.headers.get('set-cookie').split(';')[0];
+    assert.notEqual(nextCookie, cookie);
+    assert.equal((await fetch(adapter.url + '/api/images', { headers: { Cookie: cookie } })).status, 401);
+    assert.equal((await fetch(adapter.url + '/api/images', { headers: { Cookie: nextCookie } })).status, 501);
+    const hash = (await database.pool.query('SELECT password_hash FROM public.users WHERE email=$1', [email])).rows[0].password_hash;
+    for (const secret of [password, hash, readSessionToken(oldCookie), readSessionToken(cookie), readSessionToken(nextCookie), config.password]) {
+      assert.ok(!adapter.output().includes(secret));
+      assert.ok(!errors.join('').includes(secret));
+    }
+    adapter.child.kill('SIGTERM');
+    assert.deepEqual(await adapter.exited, [0, null]);
+  } finally {
+    if (adapter?.child.exitCode === null) { adapter.child.kill('SIGKILL'); await adapter.exited; }
+    await database.pool.query('DELETE FROM public.users WHERE email=$1', [email]);
+    await database.close();
+  }
+});
