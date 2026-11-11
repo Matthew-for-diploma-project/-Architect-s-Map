@@ -6,14 +6,18 @@ import { once } from 'node:events';
 import { setTimeout as delay } from 'node:timers/promises';
 import { createDatabase } from '../../src/backend/database.mjs';
 import { readDatabaseConfig } from '../../src/backend/database-config.mjs';
+import { randomUUID, randomBytes } from 'node:crypto';
+import { readAuthConfig } from '../../src/backend/auth-config.mjs';
+import { createSessionService, readSessionToken } from '../../src/backend/sessions.mjs';
 
 // Fail before connecting if the caller has not explicitly selected a test DB.
 if (process.env.NODE_ENV !== 'test') throw new Error('Для интеграционных тестов нужен NODE_ENV=test.');
 const config = readDatabaseConfig();
+const publicOrigin = 'http://127.0.0.1:3000';
 
 async function startAdapter(overrides = {}) {
   const child = spawn(process.execPath, ['tools/serve.mjs'], {
-    env: { ...process.env, HOST: '127.0.0.1', PORT: '0', ...overrides },
+    env: { ...process.env, HOST: '127.0.0.1', PORT: '0', PUBLIC_ORIGIN: publicOrigin, ...overrides },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
   let output = '';
@@ -103,11 +107,12 @@ test('running Node adapter dispatches new API errors before the original Worker'
     assert.ok(adapter.url);
     const cases = [
       ['/api/auth/me', {}, 501, 'NOT_IMPLEMENTED'],
-      ['/api/images', {}, 501, 'NOT_IMPLEMENTED'],
+      ['/api/images', {}, 401, 'AUTH_REQUIRED'],
       ['/api/auth/unknown', {}, 404, 'NOT_FOUND'],
       ['/api/auth/login', {}, 405, 'METHOD_NOT_ALLOWED'],
-      ['/api/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{bad' }, 400, 'VALIDATION_ERROR'],
-      ['/api/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: ' '.repeat(16385) }, 413, 'PAYLOAD_TOO_LARGE'],
+      ['/api/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }, 403, 'ORIGIN_REJECTED'],
+      ['/api/auth/login', { method: 'POST', headers: { Origin: publicOrigin, 'Content-Type': 'application/json' }, body: '{bad' }, 400, 'VALIDATION_ERROR'],
+      ['/api/auth/login', { method: 'POST', headers: { Origin: publicOrigin, 'Content-Type': 'application/json' }, body: ' '.repeat(16385) }, 413, 'PAYLOAD_TOO_LARGE'],
     ];
     for (const [path, init, status, code] of cases) {
       const response = await fetch(adapter.url + path, init);
@@ -141,6 +146,69 @@ test('HTTP listen failure also releases the database pool', async () => {
   } finally {
     await monitor.close();
     await new Promise(resolve => occupied.close(resolve));
+  }
+});
+
+test('invalid auth configuration exits safely before HTTP and any database connection', async () => {
+  const monitor = createDatabase();
+  try {
+    for (const overrides of [{ PUBLIC_ORIGIN: '' }, { PUBLIC_ORIGIN: 'https://user:TOP_SECRET@example.test' }, { SESSION_TTL_SECONDS: '0' },
+      { NODE_ENV: 'production', DATABASE_URL: process.env.TEST_DATABASE_URL, PUBLIC_ORIGIN: 'http://127.0.0.1:3000' }]) {
+      const adapter = await startAdapter(overrides);
+      assert.deepEqual(await adapter.exited, [1, null]);
+      assert.equal(adapter.url, undefined);
+      assert.match(adapter.output(), /PUBLIC_ORIGIN|SESSION_TTL_SECONDS/);
+      assert.doesNotMatch(adapter.output(), /TOP_SECRET|postgresql:\/\//);
+      const { rows: [row] } = await monitor.pool.query('SELECT count(*)::int AS n FROM pg_stat_activity WHERE application_name=$1', [`geokontekst:${adapter.child.pid}`]);
+      assert.equal(row.n, 0);
+    }
+  } finally { await monitor.close(); }
+});
+
+test('running Node enforces persisted session, expiry and revocation across restart without leaking cookies', async () => {
+  const database = createDatabase();
+  const userId = randomUUID();
+  const sessions = createSessionService({ database, config: readAuthConfig({ PUBLIC_ORIGIN: publicOrigin, SESSION_TTL_SECONDS: '300' }) });
+  let adapter;
+  try {
+    // Only this named fixture is written to the explicitly guarded TEST database.
+    await database.pool.query('INSERT INTO public.users (id,email,name,password_hash) VALUES ($1,$2,$3,$4)',
+      [userId, userId + '@example.test', 'P08 process fixture', 'scrypt$P08_TEST_ONLY']);
+    const first = await sessions.issue(userId), other = await sessions.issue(userId);
+    const firstCookie = first.cookie.split(';')[0], otherCookie = other.cookie.split(';')[0];
+    const token = readSessionToken(firstCookie);
+    adapter = await startAdapter();
+    const call = (path, init) => fetch(adapter.url + path, init);
+    assert.equal((await call('/api/images')).status, 401);
+    assert.equal((await call('/api/images?token=' + token)).status, 401);
+    assert.equal((await call('/api/images', { headers: { Authorization: 'Bearer ' + token } })).status, 401);
+    assert.equal((await call('/api/images', { headers: { Cookie: firstCookie + '; ' + firstCookie } })).status, 401);
+    assert.equal((await call('/api/images', { headers: { Cookie: 'am_session=' + randomBytes(32).toString('base64url') } })).status, 401);
+    const authenticated = await call('/api/images', { headers: { Cookie: firstCookie } });
+    assert.equal(authenticated.status, 501); // Authorization passed; CRUD is a later iteration.
+    assert.equal(authenticated.headers.get('set-cookie'), null); // No automatic renewal.
+    assert.ok(!(await authenticated.text()).includes(token));
+    assert.equal((await call('/api/images', { method: 'POST', headers: { Origin: 'https://evil.test', Cookie: firstCookie }, body: 'unread' })).status, 403);
+    assert.equal((await call('/api/images', { method: 'POST', headers: { Origin: publicOrigin, Cookie: firstCookie }, body: 'unread' })).status, 501);
+    adapter.child.kill('SIGTERM');
+    assert.deepEqual(await adapter.exited, [0, null]);
+    const firstOutput = adapter.output();
+    adapter = await startAdapter();
+    assert.equal((await call('/api/layer-settings', { headers: { Cookie: firstCookie } })).status, 501);
+    await sessions.revoke(first.id);
+    assert.equal((await call('/api/images', { headers: { Cookie: firstCookie } })).status, 401);
+    assert.equal((await call('/api/images', { headers: { Cookie: otherCookie } })).status, 501);
+    await database.pool.query("UPDATE public.sessions SET created_at=CURRENT_TIMESTAMP-INTERVAL '2 hours', expires_at=CURRENT_TIMESTAMP-INTERVAL '1 hour' WHERE id=$1", [other.id]);
+    assert.equal((await call('/api/images', { headers: { Cookie: otherCookie } })).status, 401);
+    assert.ok(!(firstOutput + adapter.output()).includes(token));
+    assert.ok(!(firstOutput + adapter.output()).includes(readSessionToken(otherCookie)));
+    assert.ok(!adapter.output().includes(config.password));
+    adapter.child.kill('SIGTERM');
+    assert.deepEqual(await adapter.exited, [0, null]);
+  } finally {
+    if (adapter?.child.exitCode === null) { adapter.child.kill('SIGKILL'); await adapter.exited; }
+    await database.pool.query('DELETE FROM public.users WHERE id=$1', [userId]);
+    await database.close();
   }
 });
 
