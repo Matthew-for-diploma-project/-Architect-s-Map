@@ -198,6 +198,11 @@ test('a timed-out waiting runner discards its session and can retry', async () =
         await gate.query('SELECT pg_advisory_unlock($1, 42)', [gateKey]);
         held = false;
         assert.equal((await first).applied.length, 1);
+        // The deliberate timeout is over. Give the replacement connection the
+        // normal budget so unrelated parallel schemas don't time out the retry.
+        const retry = await blocked.connect();
+        try { await retry.query('SET statement_timeout = 10000'); }
+        finally { retry.release(); }
         assert.equal((await applyMigrations(blocked, { directory })).skipped.length, 1);
       } finally {
         if (held) await gate.query('SELECT pg_advisory_unlock($1, 42)', [gateKey]);

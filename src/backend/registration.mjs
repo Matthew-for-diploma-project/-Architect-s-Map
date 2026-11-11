@@ -4,9 +4,10 @@ import { ApiError } from './http-errors.mjs';
 import { databaseQuery, withTransaction } from './transactions.mjs';
 
 // Called by the Node router after Origin, optional session and bounded JSON.
-export function createRegistrationHandler({ database, sessions }) {
+export function createRegistrationHandler({ database, sessions, rateLimiter }) {
   return async context => {
     const account = validateRegistration(context.body);
+    rateLimiter?.consumeRegistration(context);
     // Expensive work does not hold a connection, transaction or uniqueness lock.
     const passwordHash = await hashPassword(account.password);
     return withTransaction(database.pool, async client => {

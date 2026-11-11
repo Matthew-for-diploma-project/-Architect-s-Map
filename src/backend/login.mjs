@@ -3,9 +3,10 @@ import { verifyPassword } from './passwords.mjs';
 import { ApiError } from './http-errors.mjs';
 import { databaseQuery, withTransaction } from './transactions.mjs';
 
-export function createLoginHandler({ database, sessions }) {
+export function createLoginHandler({ database, sessions, rateLimiter }) {
   return async context => {
     const account = validateLogin(context.body);
+    rateLimiter?.consumeLogin(context, account.email);
     const { rows: [stored] } = await databaseQuery(database.pool,
       'SELECT id, email, name, password_hash FROM users WHERE email = $1', [account.email]);
     const userId = stored?.id, passwordHash = stored?.password_hash;

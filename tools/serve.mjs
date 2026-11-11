@@ -11,6 +11,7 @@ import { createAuthenticationGuard } from '../src/backend/authentication.mjs';
 import { createRegistrationHandler } from '../src/backend/registration.mjs';
 import { createLoginHandler } from '../src/backend/login.mjs';
 import { createMeHandler, createLogoutHandler } from '../src/backend/account-session.mjs';
+import { readAuthRateLimitConfig, createAuthRateLimiter } from '../src/backend/auth-rate-limit.mjs';
 
 const major = Number(process.versions.node.split('.')[0]);
 if (major < 22) {
@@ -50,9 +51,11 @@ if (!Number.isInteger(port) || port < 0 || port > 65535) {
 
 let database;
 let authConfig;
+let rateLimitConfig;
 try {
   database = createDatabase();
   authConfig = readAuthConfig();
+  rateLimitConfig = readAuthRateLimitConfig();
   await database.checkConnection();
 } catch (error) {
   console.error(['DATABASE_CONFIG_INVALID', 'AUTH_CONFIG_INVALID'].includes(error.code)
@@ -62,14 +65,15 @@ try {
 }
 
 const sessions = createSessionService({ database, config: authConfig });
+const rateLimiter = createAuthRateLimiter({ config: rateLimitConfig });
 const server = http.createServer(createRequestHandler({
   worker,
   nodeApi: createNodeApiHandler({
     database,
     beforeHandle: createAuthenticationGuard({ sessions, config: authConfig }),
     handlers: {
-      'auth.register': createRegistrationHandler({ database, sessions }),
-      'auth.login': createLoginHandler({ database, sessions }),
+      'auth.register': createRegistrationHandler({ database, sessions, rateLimiter }),
+      'auth.login': createLoginHandler({ database, sessions, rateLimiter }),
       'auth.me': createMeHandler(),
       'auth.logout': createLogoutHandler({ sessions, config: authConfig }),
     },

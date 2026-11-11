@@ -43,7 +43,8 @@ export function createNodeApiHandler({ database, handlers = {}, beforeHandle } =
         if (Array.isArray(value)) value.forEach(item => headers.append(name, item));
         else if (value !== undefined) headers.set(name, value);
       }
-      const context = { action, method, url, headers, params, isPrivate: !!route.private, bodyLimit, database, signal };
+      const context = { action, method, url, headers, params, isPrivate: !!route.private, bodyLimit, database, signal,
+        remoteAddress: incoming.socket?.remoteAddress };
       context.auth = await beforeHandle?.(context);
       // Fail closed even if a new entry point forgets to attach its guard.
       if (route.private && (typeof context.auth?.user?.id !== 'string' || !context.auth.user.id)) {
