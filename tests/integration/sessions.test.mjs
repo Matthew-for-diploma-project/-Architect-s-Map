@@ -73,7 +73,7 @@ test('missing, forged, altered and expired sessions fail closed using the databa
     await pool.query("UPDATE sessions SET created_at=CURRENT_TIMESTAMP-INTERVAL '2 hours', expires_at=CURRENT_TIMESTAMP-INTERVAL '1 hour' WHERE id=$1", [session.id]);
     const expired = new Headers({ cookie: session.cookie.split(';')[0] + '; Max-Age=604800' });
     assert.equal(await service.resolve(expired), null);
-    assert.equal((await pool.query('SELECT count(*)::int AS n FROM sessions')).rows[0].n, 1); // Cleanup is P11, not a GET side effect.
+    assert.equal((await pool.query('SELECT count(*)::int AS n FROM sessions')).rows[0].n, 1); // Maintenance is explicit, never a GET side effect.
   });
 });
 

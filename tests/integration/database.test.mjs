@@ -106,7 +106,6 @@ test('running Node adapter dispatches new API errors before the original Worker'
   try {
     assert.ok(adapter.url);
     const cases = [
-      ['/api/auth/me', {}, 501, 'NOT_IMPLEMENTED'],
       ['/api/images', {}, 401, 'AUTH_REQUIRED'],
       ['/api/auth/unknown', {}, 404, 'NOT_FOUND'],
       ['/api/auth/login', {}, 405, 'METHOD_NOT_ALLOWED'],
@@ -314,6 +313,64 @@ test('running Node logs in with normalized email, rotates cookies and gives iden
   } finally {
     if (adapter?.child.exitCode === null) { adapter.child.kill('SIGKILL'); await adapter.exited; }
     await database.pool.query('DELETE FROM public.users WHERE email=$1', [email]);
+    await database.close();
+  }
+});
+
+test('P11 running Node preserves the profile across restart, logs out one device and rejects expired sessions', async () => {
+  const database = createDatabase(), id = randomUUID(), email = id + '@example.test';
+  const sessions = createSessionService({ database, config: readAuthConfig({ PUBLIC_ORIGIN: publicOrigin, SESSION_TTL_SECONDS: '300' }) });
+  let adapter;
+  const output = [];
+  try {
+    await database.pool.query('INSERT INTO public.users (id,email,name,password_hash) VALUES ($1,$2,$3,$4)',
+      [id, email, '<b>P11 профиль</b>', 'scrypt$P11_PROCESS_SECRET']);
+    const current = await sessions.issue(id), other = await sessions.issue(id);
+    const cookie = current.cookie.split(';')[0], otherCookie = other.cookie.split(';')[0];
+    const stored = (await database.pool.query('SELECT * FROM public.sessions WHERE id=$1', [current.id])).rows[0];
+    adapter = await startAdapter();
+    assert.ok(adapter.url, adapter.output());
+    const me = value => fetch(adapter.url + '/api/auth/me', { headers: value ? { Cookie: value } : {} });
+    const logout = value => fetch(adapter.url + '/api/auth/logout', { method: 'POST', headers: { Origin: publicOrigin, ...(value ? { Cookie: value } : {}) } });
+    assert.deepEqual(await (await me()).json(), { user: null });
+    const response = await me(cookie);
+    assert.equal(response.status, 200);
+    assert.deepEqual(await response.json(), { user: { id, email, name: '<b>P11 профиль</b>' } });
+    assert.equal(response.headers.get('set-cookie'), null);
+    assert.equal(response.headers.get('cache-control'), 'private, no-store');
+    await database.pool.query('UPDATE public.users SET name=$1 WHERE id=$2', ['P11 после обновления', id]);
+    assert.equal((await (await me(cookie)).json()).user.name, 'P11 после обновления');
+    assert.deepEqual((await database.pool.query('SELECT * FROM public.sessions WHERE id=$1', [current.id])).rows[0], stored);
+    adapter.child.kill('SIGTERM');
+    assert.deepEqual(await adapter.exited, [0, null]);
+    output.push(adapter.output());
+    adapter = await startAdapter();
+    assert.ok(adapter.url, adapter.output());
+    assert.equal((await (await me(cookie)).json()).user.name, 'P11 после обновления');
+    for (const value of [cookie, cookie, undefined]) {
+      const ended = await logout(value);
+      assert.equal(ended.status, 204);
+      assert.equal(await ended.text(), '');
+      assert.match(ended.headers.get('set-cookie'), /^am_session=; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT; HttpOnly; SameSite=Lax; Path=\/$/);
+      assert.equal(ended.headers.get('cache-control'), 'private, no-store');
+    }
+    assert.deepEqual(await (await me(cookie)).json(), { user: null });
+    assert.equal((await fetch(adapter.url + '/api/images', { headers: { Cookie: cookie } })).status, 401);
+    assert.equal((await (await me(otherCookie)).json()).user.id, id);
+    await database.pool.query("UPDATE public.sessions SET created_at=CURRENT_TIMESTAMP-INTERVAL '2 hours', expires_at=CURRENT_TIMESTAMP-INTERVAL '1 hour' WHERE id=$1", [other.id]);
+    assert.deepEqual(await (await me(otherCookie)).json(), { user: null });
+    assert.equal((await fetch(adapter.url + '/api/images', { headers: { Cookie: otherCookie } })).status, 401);
+    assert.equal((await logout(otherCookie)).status, 204);
+    assert.equal((await database.pool.query('SELECT count(*)::int AS n FROM public.sessions WHERE user_id=$1', [id])).rows[0].n, 1); // Explicit maintenance only.
+    adapter.child.kill('SIGTERM');
+    assert.deepEqual(await adapter.exited, [0, null]);
+    output.push(adapter.output());
+    for (const secret of ['scrypt$P11_PROCESS_SECRET', readSessionToken(cookie), readSessionToken(otherCookie), config.password]) {
+      assert.ok(!output.join('').includes(secret));
+    }
+  } finally {
+    if (adapter?.child.exitCode === null) { adapter.child.kill('SIGKILL'); await adapter.exited; }
+    await database.pool.query('DELETE FROM public.users WHERE id=$1', [id]);
     await database.close();
   }
 });

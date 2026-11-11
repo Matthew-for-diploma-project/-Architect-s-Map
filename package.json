@@ -9,6 +9,8 @@
     "db:check": "node --env-file=.env tools/check-database.mjs",
     "db:migrate": "node --env-file=.env tools/migrate.mjs",
     "db:migrate:test": "node --env-file=.env.test tools/migrate.mjs --test",
+    "db:sessions:cleanup": "node --env-file=.env tools/cleanup-sessions.mjs",
+    "db:sessions:cleanup:test": "node --env-file=.env.test tools/cleanup-sessions.mjs --test",
     "test": "node --test tests/*.test.mjs",
     "test:db": "node --env-file=.env.test --test tests/integration/*.test.mjs"
   },
