@@ -1,1 +1,14 @@
-{"name":"geokontekst","private":true,"type":"module","scripts":{"build":"node build.mjs","test":"node --test tests/*.test.mjs"}}
+{
+  "name": "geokontekst",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "build": "node build.mjs",
+    "start": "node --env-file=.env tools/serve.mjs",
+    "db:check": "node --env-file=.env tools/check-database.mjs",
+    "test": "node --test tests/*.test.mjs",
+    "test:db": "node --env-file=.env.test --test tests/integration/database.test.mjs"
+  },
+  "dependencies": { "pg": "8.23.1" }
+}

@@ -1,0 +1,57 @@
+name: geokontekst
+
+services:
+  postgres:
+    image: postgres:17.11-bookworm
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_DB: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_ADMIN_PASSWORD:?Set POSTGRES_ADMIN_PASSWORD in .env}
+      POSTGRES_INITDB_ARGS: --auth-host=scram-sha-256
+      APP_DB_NAME: geokontekst
+      APP_DB_USER: geokontekst
+      APP_DB_PASSWORD: ${POSTGRES_APP_PASSWORD:?Set POSTGRES_APP_PASSWORD in .env}
+    ports:
+      - "127.0.0.1:55432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./tools/postgres-init.sh:/docker-entrypoint-initdb.d/10-app-user.sh:ro
+    networks: [database]
+    healthcheck:
+      test: [CMD-SHELL, 'pg_isready -h 127.0.0.1 -U "$${APP_DB_USER}" -d "$${APP_DB_NAME}"']
+      interval: 2s
+      timeout: 3s
+      retries: 30
+      start_period: 10s
+
+  postgres-test:
+    image: postgres:17.11-bookworm
+    profiles: [test]
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_DB: postgres
+      POSTGRES_PASSWORD: ${TEST_POSTGRES_ADMIN_PASSWORD:?Set TEST_POSTGRES_ADMIN_PASSWORD in .env}
+      POSTGRES_INITDB_ARGS: --auth-host=scram-sha-256
+      APP_DB_NAME: geokontekst_test
+      APP_DB_USER: geokontekst_test
+      APP_DB_PASSWORD: ${TEST_POSTGRES_APP_PASSWORD:?Set TEST_POSTGRES_APP_PASSWORD in .env}
+    ports:
+      - "127.0.0.1:55433:5432"
+    volumes:
+      - postgres-test-data:/var/lib/postgresql/data
+      - ./tools/postgres-init.sh:/docker-entrypoint-initdb.d/10-app-user.sh:ro
+    networks: [database-test]
+    healthcheck:
+      test: [CMD-SHELL, 'pg_isready -h 127.0.0.1 -U "$${APP_DB_USER}" -d "$${APP_DB_NAME}"']
+      interval: 2s
+      timeout: 3s
+      retries: 30
+      start_period: 10s
+
+volumes:
+  postgres-data:
+  postgres-test-data:
+
+networks:
+  database:
+  database-test:
