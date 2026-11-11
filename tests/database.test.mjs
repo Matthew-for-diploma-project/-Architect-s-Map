@@ -108,7 +108,7 @@ test('unresponsive database is bounded, errors are safe and closing is idempoten
 
 test('database CLI and server reject missing configuration without starting HTTP', async () => {
   const cleanEnv = { PATH: process.env.PATH, NODE_ENV: 'development' };
-  for (const script of ['tools/check-database.mjs', 'tools/serve.mjs']) {
+  for (const script of ['tools/check-database.mjs', 'tools/serve.mjs', 'tools/migrate.mjs']) {
     await assert.rejects(run(process.execPath, [script], { env: cleanEnv, timeout: 5000 }), error => {
       assert.equal(error.code, 1);
       assert.match(error.stderr, /DATABASE_URL/);
