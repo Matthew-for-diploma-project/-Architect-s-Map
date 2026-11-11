@@ -122,5 +122,5 @@ test('Worker build excludes Node database modules and environment configuration'
   const build = readFileSync(new URL('../build.mjs', import.meta.url), 'utf8');
   const worker = readFileSync(new URL('../dist/server/index.js', import.meta.url), 'utf8');
   assert.doesNotMatch(build, /src\/backend|DATABASE_URL|\.env/);
-  assert.doesNotMatch(worker, /DATABASE_URL|TEST_DATABASE_URL|DB_POOL_MAX|DATABASE_CA_FILE|from ['"]pg['"]|createNodeApiHandler|readBoundedBody|NOT_IMPLEMENTED|hashPassword|verifyPassword|validateRegistration|toPublicUser|node:crypto|PUBLIC_ORIGIN|SESSION_TTL_SECONDS|createSessionService|createAuthenticationGuard|am_session/);
+  assert.doesNotMatch(worker, /DATABASE_URL|TEST_DATABASE_URL|DB_POOL_MAX|DATABASE_CA_FILE|from ['"]pg['"]|createNodeApiHandler|readBoundedBody|NOT_IMPLEMENTED|hashPassword|verifyPassword|validateRegistration|toPublicUser|node:crypto|PUBLIC_ORIGIN|SESSION_TTL_SECONDS|createSessionService|createAuthenticationGuard|createRegistrationHandler|am_session/);
 });
