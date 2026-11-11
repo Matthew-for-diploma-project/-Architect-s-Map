@@ -46,14 +46,15 @@ async function user(pool, email = 'p04@example.test') {
 
 test('clean schema migrates once; a repeated run preserves users and history', async () => {
   await isolatedSchema(async (pool, schema) => {
-    assert.equal((await applyMigrations(pool)).applied.length, 1);
+    const count = (await loadMigrations()).length;
+    assert.equal((await applyMigrations(pool)).applied.length, count);
     const saved = await user(pool);
     assert.match(saved.id, /^[0-9a-f-]{36}$/);
     assert.ok(saved.created_at instanceof Date);
     const history = (await pool.query('SELECT * FROM schema_migrations')).rows;
     const second = await applyMigrations(pool);
     assert.equal(second.applied.length, 0);
-    assert.equal(second.skipped.length, 1);
+    assert.equal(second.skipped.length, count);
     assert.deepEqual((await pool.query('SELECT * FROM schema_migrations')).rows, history);
     assert.deepEqual((await pool.query('SELECT * FROM users')).rows, [saved]);
     const indexes = (await pool.query('SELECT indexname FROM pg_indexes WHERE schemaname = $1', [schema])).rows.map(row => row.indexname);
@@ -166,9 +167,10 @@ test('edited or missing applied SQL files stop the runner without changing exist
 
 test('parallel migration runners serialize and apply a version only once', async () => {
   await isolatedSchema(async pool => {
+    const count = (await loadMigrations()).length;
     const results = await Promise.all([applyMigrations(pool), applyMigrations(pool)]);
-    assert.deepEqual(results.map(result => result.applied.length).sort(), [0, 1]);
-    assert.equal((await pool.query('SELECT count(*)::int AS n FROM schema_migrations')).rows[0].n, 1);
+    assert.deepEqual(results.map(result => result.applied.length).sort(), [0, count]);
+    assert.equal((await pool.query('SELECT count(*)::int AS n FROM schema_migrations')).rows[0].n, count);
     assert.equal(pool.waitingCount, 0);
   });
 });
