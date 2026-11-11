@@ -14,7 +14,7 @@ const errors = Object.freeze({
   RATE_LIMITED: [429, 'Слишком много попыток. Повторите позже.'],
   DATABASE_UNAVAILABLE: [503, 'База данных временно недоступна.'],
   INTERNAL_ERROR: [500, 'Не удалось выполнить запрос.'],
-  // Temporary until the remaining handlers in P10–P11/P19–P22/P27 are added.
+  // Temporary until the remaining handlers in P11/P19–P22/P27 are added.
   NOT_IMPLEMENTED: [501, 'Операция ещё не реализована.'],
 });
 
