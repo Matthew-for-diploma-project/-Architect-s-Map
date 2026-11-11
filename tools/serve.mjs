@@ -1,10 +1,10 @@
 #!/usr/bin/env node
-// Local HTTP adapter for the unchanged ESM Worker in dist/server/index.js.
+// New Node APIs run before the unchanged ESM Worker in dist/server/index.js.
 // PostgreSQL is owned by this Node process, never by the embedded Worker.
 import http from 'node:http';
-import { Readable } from 'node:stream';
-import { pipeline } from 'node:stream/promises';
 import { createDatabase } from '../src/backend/database.mjs';
+import { createNodeApiHandler } from '../src/backend/router.mjs';
+import { createRequestHandler } from '../src/backend/http-adapter.mjs';
 
 const major = Number(process.versions.node.split('.')[0]);
 if (major < 22) {
@@ -52,42 +52,10 @@ try {
   process.exit(1);
 }
 
-const server = http.createServer(async (incoming, outgoing) => {
-  const controller = new AbortController();
-  incoming.once('aborted', () => controller.abort());
-  outgoing.once('close', () => {
-    if (!outgoing.writableFinished) controller.abort();
-  });
-  try {
-    const headers = new Headers();
-    for (let i = 0; i < incoming.rawHeaders.length; i += 2) {
-      headers.append(incoming.rawHeaders[i], incoming.rawHeaders[i + 1]);
-    }
-    const init = { method: incoming.method, headers, signal: controller.signal };
-    if (!['GET', 'HEAD'].includes(incoming.method)) {
-      init.body = Readable.toWeb(incoming);
-      init.duplex = 'half';
-    }
-    // A fixed origin avoids using an untrusted Host header for URL routing.
-    const url = new URL(incoming.url || '/', 'http://localhost');
-    const response = await worker.fetch(new Request(url, init));
-    outgoing.statusCode = response.status;
-    response.headers.forEach((value, name) => outgoing.setHeader(name, value));
-    if (incoming.method === 'HEAD' || !response.body) {
-      await response.body?.cancel();
-      outgoing.end();
-    } else {
-      await pipeline(Readable.fromWeb(response.body), outgoing);
-    }
-  } catch (error) {
-    if (controller.signal.aborted) return;
-    console.error('local_adapter_error', error.message);
-    if (!outgoing.headersSent) {
-      outgoing.writeHead(500, { 'Content-Type': 'application/json; charset=utf-8' });
-      outgoing.end(JSON.stringify({ error: 'Ошибка локального HTTP-адаптера' }));
-    } else outgoing.destroy();
-  }
-});
+const server = http.createServer(createRequestHandler({
+  worker,
+  nodeApi: createNodeApiHandler({ database }),
+}));
 
 server.on('error', error => {
   console.error(error.code === 'EADDRINUSE'

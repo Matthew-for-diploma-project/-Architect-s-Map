@@ -97,6 +97,37 @@ for (const signal of ['SIGTERM', 'SIGINT']) {
   });
 }
 
+test('running Node adapter dispatches new API errors before the original Worker', async () => {
+  const adapter = await startAdapter();
+  try {
+    assert.ok(adapter.url);
+    const cases = [
+      ['/api/auth/me', {}, 501, 'NOT_IMPLEMENTED'],
+      ['/api/images', {}, 501, 'NOT_IMPLEMENTED'],
+      ['/api/auth/unknown', {}, 404, 'NOT_FOUND'],
+      ['/api/auth/login', {}, 405, 'METHOD_NOT_ALLOWED'],
+      ['/api/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{bad' }, 400, 'VALIDATION_ERROR'],
+      ['/api/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: ' '.repeat(16385) }, 413, 'PAYLOAD_TOO_LARGE'],
+    ];
+    for (const [path, init, status, code] of cases) {
+      const response = await fetch(adapter.url + path, init);
+      assert.equal(response.status, status);
+      assert.equal(response.headers.get('cache-control'), 'private, no-store');
+      assert.equal(response.headers.get('x-content-type-options'), 'nosniff');
+      if (status === 405) assert.equal(response.headers.get('allow'), 'POST');
+      assert.equal((await response.json()).error.code, code);
+    }
+    const legacy = await fetch(adapter.url + '/api/objects', { method: 'POST', body: 'unchanged legacy path' });
+    assert.equal(legacy.status, 405);
+    assert.deepEqual(await legacy.json(), { error: 'Только GET' });
+    assert.ok(!adapter.output().includes(config.password));
+    adapter.child.kill('SIGTERM');
+    assert.deepEqual(await adapter.exited, [0, null]);
+  } finally {
+    if (adapter.child.exitCode === null) { adapter.child.kill('SIGKILL'); await adapter.exited; }
+  }
+});
+
 test('HTTP listen failure also releases the database pool', async () => {
   const occupied = net.createServer();
   await new Promise(resolve => occupied.listen(0, '127.0.0.1', resolve));
