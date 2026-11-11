@@ -221,3 +221,47 @@ test('wrong credentials fail safely before the HTTP server is opened', async () 
   assert.doesNotMatch(adapter.output(), /wrong-password-for-P03-test|postgresql:\/\//);
   assert.equal(adapter.url, undefined);
 });
+
+test('running Node registers an account, sets a working cookie and safely rejects duplicates', async () => {
+  const database = createDatabase();
+  const email = randomUUID() + '@example.test';
+  const password = 'P09 process fixture password';
+  let adapter;
+  try {
+    adapter = await startAdapter();
+    assert.ok(adapter.url, adapter.output());
+    const send = body => fetch(adapter.url + '/api/auth/register', {
+      method: 'POST', headers: { Origin: publicOrigin, 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+    });
+    const response = await send({ email: ' ' + email.toUpperCase() + ' ', password, name: ' P09 пользователь ' });
+    assert.equal(response.status, 201);
+    assert.equal(response.headers.get('cache-control'), 'private, no-store');
+    const body = await response.json();
+    assert.deepEqual(Object.keys(body.user).sort(), ['email', 'id', 'name']);
+    assert.equal(body.user.email, email);
+    assert.equal(body.user.name, 'P09 пользователь');
+    const cookie = response.headers.get('set-cookie').split(';')[0], token = readSessionToken(cookie);
+    const row = (await database.pool.query('SELECT u.password_hash,l.opacity,l.revision FROM public.users u JOIN public.layer_settings l ON l.user_id=u.id WHERE u.id=$1', [body.user.id])).rows[0];
+    assert.match(row.password_hash, /^scrypt\$v=1\$/);
+    assert.equal(row.opacity, 1);
+    assert.equal(row.revision, 1);
+    assert.ok(!JSON.stringify(body).includes(token));
+    assert.ok(!JSON.stringify(body).includes(password));
+    assert.ok(!JSON.stringify(body).includes(row.password_hash));
+    assert.equal((await fetch(adapter.url + '/api/images', { headers: { Cookie: cookie } })).status, 501);
+    const duplicate = await send({ email, password, name: 'Другое имя' });
+    assert.equal(duplicate.status, 409);
+    assert.equal((await duplicate.json()).error.code, 'EMAIL_EXISTS');
+    assert.equal(duplicate.headers.get('set-cookie'), null);
+    const invalid = await send({ email, password: 'SHORT', name: 'Имя' });
+    assert.equal(invalid.status, 400);
+    assert.equal(invalid.headers.get('set-cookie'), null);
+    for (const secret of [password, token, row.password_hash, config.password]) assert.ok(!adapter.output().includes(secret));
+    adapter.child.kill('SIGTERM');
+    assert.deepEqual(await adapter.exited, [0, null]);
+  } finally {
+    if (adapter?.child.exitCode === null) { adapter.child.kill('SIGKILL'); await adapter.exited; }
+    await database.pool.query('DELETE FROM public.users WHERE email=$1', [email]);
+    await database.close();
+  }
+});
