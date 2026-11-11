@@ -1,9 +1,10 @@
 #!/usr/bin/env node
 // Local HTTP adapter for the unchanged ESM Worker in dist/server/index.js.
-// Uses Node built-ins only. It does not serve the repository as static files.
+// PostgreSQL is owned by this Node process, never by the embedded Worker.
 import http from 'node:http';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
+import { createDatabase } from '../src/backend/database.mjs';
 
 const major = Number(process.versions.node.split('.')[0]);
 if (major < 22) {
@@ -38,6 +39,16 @@ for (let i = 2; i < process.argv.length; i++) {
 const port = Number(portValue);
 if (!Number.isInteger(port) || port < 0 || port > 65535) {
   console.error('PORT должен быть целым числом от 0 до 65535.');
+  process.exit(1);
+}
+
+let database;
+try {
+  database = createDatabase();
+  await database.checkConnection();
+} catch (error) {
+  console.error(error.code === 'DATABASE_CONFIG_INVALID' ? error.message : 'PostgreSQL недоступна. Проверьте запуск БД и серверные настройки подключения.');
+  await database?.close();
   process.exit(1);
 }
 
@@ -82,7 +93,7 @@ server.on('error', error => {
   console.error(error.code === 'EADDRINUSE'
     ? `Порт ${port} занят. Задайте другой PORT.`
     : `Не удалось запустить сервер: ${error.message}`);
-  process.exitCode = 1;
+  void shutdown(1);
 });
 
 server.listen(port, host, () => {
@@ -92,9 +103,20 @@ server.listen(port, host, () => {
   console.log('Для остановки нажмите Ctrl+C. После изменений выполните сборку и перезапустите сервер.');
 });
 
+let shuttingDown;
+function shutdown(exitCode) {
+  shuttingDown ??= (async () => {
+    await new Promise(resolve => {
+      if (!server.listening) return resolve();
+      server.close(resolve);
+      server.closeAllConnections();
+    });
+    await database.close();
+    process.exit(exitCode);
+  })();
+  return shuttingDown;
+}
+
 for (const signal of ['SIGINT', 'SIGTERM']) {
-  process.once(signal, () => {
-    server.close(() => process.exit(0));
-    server.closeAllConnections();
-  });
+  process.once(signal, () => { void shutdown(0); });
 }
