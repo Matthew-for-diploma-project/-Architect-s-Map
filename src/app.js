@@ -1,4 +1,7 @@
 import { GENPLAN_BOUNDS } from './genplan-calibration.js';
+import { initAccountDialog } from './account-dialog.js';
+
+initAccountDialog();
 
 const $ = id => document.getElementById(id);
 const sidebar = $('sidebar');

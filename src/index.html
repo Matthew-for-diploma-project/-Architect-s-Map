@@ -29,16 +29,64 @@
 @media(max-width:1050px){.workspace.sidebar-collapsed .sidebar,.workspace.details-collapsed .details{display:block;visibility:hidden}.workspace.sidebar-collapsed{grid-template-columns:0 1fr}.workspace.sidebar-collapsed.details-collapsed{grid-template-columns:1fr}.workspace.details-collapsed{grid-template-columns:270px 1fr}.panel-toggle{top:12px}}
 @media(max-width:720px){.panel-toggle{top:12px;padding:8px 10px}.panel-toggle span{font-size:12px}#toggleSidebar{left:12px}#toggleDetails{right:12px}.workspace:not(.sidebar-collapsed) .sidebar{display:block;transform:none}.workspace.sidebar-collapsed .sidebar{display:none}.workspace:not(.details-collapsed) .details{display:block;position:absolute;right:10px;top:78px;bottom:10px;width:min(340px,calc(100% - 20px));box-shadow:var(--shadow);border-radius:14px;z-index:850}.workspace.details-collapsed .details{display:none}}
 </style>
+<style>
+.search{min-width:0}.account-button{flex-shrink:0;min-height:44px;padding:9px 14px;border:1px solid #81929b;border-radius:9px;background:transparent;color:#fff;font-weight:700}
+.account-button:hover{background:#2a3b45}.account-button:disabled{cursor:wait}
+.account-dialog{width:min(460px,calc(100% - 24px));max-height:calc(100vh - 24px);max-height:calc(100dvh - 24px);padding:24px;border:1px solid var(--line);border-radius:18px;background:var(--panel);color:var(--ink);box-shadow:var(--shadow);overflow:auto;overscroll-behavior:contain}
+.account-dialog::backdrop{background:#0c1929a6}
+.account-header{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}.account-header h2{margin:7px 0 18px;font-size:24px;letter-spacing:-.03em}
+.account-close{flex-shrink:0;min-width:44px;min-height:44px;padding:7px;border:1px solid var(--line);border-radius:9px;background:#fff;color:var(--ink);font-size:24px;line-height:1}
+.account-tabs{display:flex;gap:6px;padding:4px;border-radius:11px;background:var(--paper);margin-bottom:16px}
+.account-tabs button{flex:1;min-height:44px;padding:8px;border:0;border-radius:8px;background:transparent;color:#47575f;font-weight:700}
+.account-tabs [aria-selected=true]{background:var(--ink);color:#fff}
+.account-notice{padding:11px 12px;background:#eef3ff;border-radius:9px;color:#354e72;font-size:13px;line-height:1.5;margin:0 0 18px}
+.account-form{display:grid;gap:14px}.account-field{display:grid;gap:6px}.account-field label{font-size:14px;font-weight:700}
+.account-field input{min-width:0;width:100%;min-height:44px;padding:10px 12px;border:1px solid #81929b;border-radius:9px;background:#fff;color:var(--ink);font-size:16px}
+.account-field input[aria-invalid=true]{border-color:#b32f3f}.account-hint{font-size:12px;line-height:1.5;color:#52616a}
+.account-error{color:#a62435;font-size:13px;line-height:1.4}.account-error:empty{display:none}
+.account-name-preview{margin:0;font-size:13px;line-height:1.5;overflow-wrap:anywhere}
+.account-submit{min-height:44px;padding:11px;border:0;border-radius:9px;background:var(--ink);color:#fff;font-weight:750}
+.account-submit:hover{background:#2c414d}.account-status{min-height:1.5em;margin:0;font-size:13px;line-height:1.5;color:#354e72;overflow-wrap:anywhere}
+@media(max-width:720px){.account-button{padding:9px 10px}.account-dialog{padding:20px}.account-header h2{font-size:22px}}
+@media(max-height:500px){.account-dialog{padding:16px}.account-header h2{margin-bottom:12px}}
+@media print{.account-dialog{display:none!important}}
+</style>
 </head>
 <body>
 <main class="app">
-  <header class="topbar"><div class="brand"><div class="logo">⌁</div>ГеоКонтекст</div><form class="search" id="searchForm"><input id="searchInput" aria-label="Поиск адреса или кадастрового номера" placeholder="Адрес или кадастровый номер"><button>Найти</button></form><button class="navbtn" id="aboutBtn">О проекте / НИР</button></header>
+  <header class="topbar"><div class="brand"><div class="logo">⌁</div>ГеоКонтекст</div><form class="search" id="searchForm"><input id="searchInput" aria-label="Поиск адреса или кадастрового номера" placeholder="Адрес или кадастровый номер"><button>Найти</button></form><button class="navbtn" id="aboutBtn">О проекте / НИР</button><button class="account-button" id="accountBtn" type="button" aria-haspopup="dialog" aria-controls="accountDialog" disabled>Войти</button></header>
   <section class="workspace" id="workspace">
     <aside class="sidebar" id="sidebar"><h2>Объекты территории</h2><p>Загрузка интерфейса…</p></aside>
     <div class="mapwrap"><div class="panel-buttons" aria-label="Управление панелями"><button class="panel-toggle" id="toggleSidebar" type="button" aria-expanded="true" aria-controls="sidebar" title="Свернуть левую панель">☰ <span>Слои</span></button><button class="panel-toggle" id="toggleDetails" type="button" aria-expanded="true" aria-controls="details" title="Свернуть правую панель">☰ <span>Сведения</span></button></div><div id="map" class="map"></div><div class="mapbadge"><b>Карта Рязани</b><br>подложки и свои рисунки — слева</div><div class="coord" id="coord">54.6296, 39.7420</div></div>
     <aside class="details" id="details"><h2>Рабочая карта</h2><p>Выберите подложку или добавьте свой рисунок.</p></aside>
   </section>
 </main>
+<dialog class="account-dialog" id="accountDialog" aria-labelledby="accountTitle" aria-describedby="accountNotice">
+  <div class="account-header"><div><div class="eyebrow">Личный кабинет</div><h2 id="accountTitle">Вход в ГеоКонтекст</h2></div><button class="account-close" id="closeAccount" type="button" aria-label="Закрыть окно аккаунта">×</button></div>
+  <div class="account-tabs" role="tablist" aria-label="Вход или регистрация">
+    <button id="accountLoginTab" type="button" role="tab" data-mode="login" aria-selected="true" aria-controls="accountLoginPanel">Вход</button>
+    <button id="accountRegisterTab" type="button" role="tab" data-mode="register" aria-selected="false" aria-controls="accountRegisterPanel" tabindex="-1">Регистрация</button>
+  </div>
+  <p class="account-notice" id="accountNotice">Вход и регистрация пока недоступны. Данные формы не отправляются. Вы можете продолжить работу с картой.</p>
+  <div id="accountLoginPanel" role="tabpanel" aria-labelledby="accountLoginTab">
+    <form class="account-form" id="accountLoginForm" method="dialog" novalidate>
+      <div class="account-field"><label for="loginEmail">Электронная почта</label><input id="loginEmail" name="email" type="text" inputmode="email" autocomplete="username" autocapitalize="none" spellcheck="false" required aria-describedby="loginEmailError"><span class="account-error" id="loginEmailError"></span></div>
+      <div class="account-field"><label for="loginPassword">Пароль</label><input id="loginPassword" name="password" type="password" autocomplete="current-password" required aria-describedby="loginPasswordHint loginPasswordError"><span class="account-hint" id="loginPasswordHint">От 12 до 128 символов. Пробелы учитываются.</span><span class="account-error" id="loginPasswordError"></span></div>
+      <button class="account-submit" type="submit">Войти</button>
+      <p class="account-status" role="status" aria-live="polite" aria-atomic="true"></p>
+    </form>
+  </div>
+  <div id="accountRegisterPanel" role="tabpanel" aria-labelledby="accountRegisterTab" hidden>
+    <form class="account-form" id="accountRegisterForm" method="dialog" novalidate>
+      <div class="account-field"><label for="registerEmail">Электронная почта</label><input id="registerEmail" name="email" type="text" inputmode="email" autocomplete="username" autocapitalize="none" spellcheck="false" required aria-describedby="registerEmailError"><span class="account-error" id="registerEmailError"></span></div>
+      <div class="account-field"><label for="registerPassword">Пароль</label><input id="registerPassword" name="password" type="password" autocomplete="new-password" required aria-describedby="registerPasswordHint registerPasswordError"><span class="account-hint" id="registerPasswordHint">От 12 до 128 символов. Пробелы учитываются.</span><span class="account-error" id="registerPasswordError"></span></div>
+      <div class="account-field"><label for="registerName">Имя</label><input id="registerName" name="name" type="text" autocomplete="nickname" required aria-describedby="registerNameHint registerNameError accountNamePreview"><span class="account-hint" id="registerNameHint">От 1 до 80 символов. Так вас будут видеть в личном кабинете.</span><span class="account-error" id="registerNameError"></span></div>
+      <p class="account-name-preview" id="accountNamePreview" hidden>Ваше имя в профиле: <b id="accountNameText"></b></p>
+      <button class="account-submit" type="submit">Зарегистрироваться</button>
+      <p class="account-status" role="status" aria-live="polite" aria-atomic="true"></p>
+    </form>
+  </div>
+</dialog>
 <section class="drawer" id="drawer"><div class="drawerhead"><div><div class="eyebrow">Дипломный проект · Прикладная информатика</div><h1>Разработка веб‑ориентированной геоинформационной системы предпроектного анализа городских территорий</h1><p class="drawerlead"><b>Тема НИР:</b> Исследование методов интеграции, визуализации и послойного анализа разнородных пространственных данных в веб‑ориентированных геоинформационных системах.</p></div><button class="close" id="closeDrawer">Закрыть</button></div><div class="research-grid"><article class="card"><h3>Цель и функциональность</h3><ul><li>единая интерактивная карта с синхронно совмещёнными слоями;</li><li>переключение подложек и независимая настройка прозрачности;</li><li>поиск адресов через Nominatim и участков по кадастровому номеру;</li><li>выбор реального кадастрового участка с выводом доступных сведений справа;</li><li>визуализация рельефа и сопоставление собственных карт;</li></ul></article><article class="card"><h3>Объект и предмет НИР</h3><p><b>Объект:</b> процессы информационного обеспечения предпроектного анализа городских территорий.</p><p><b>Предмет:</b> методы и программные средства интеграции разнородных геопространственных данных, управления слоями и предоставления связанных нормативно‑справочных сведений в веб‑интерфейсе.</p></article><article class="card"><h3>Источники данных и API</h3><p><a href="https://www.openstreetmap.org/copyright" target="_blank">OpenStreetMap</a> — базовая карта и открытые векторные данные (ODbL).</p><p><a href="https://operations.osmfoundation.org/policies/nominatim/" target="_blank">Nominatim</a> — геокодирование адресов; публичный сервер подходит только для умеренной учебной нагрузки.</p><p><a href="https://nspd.gov.ru/map?thematic=PKK" target="_blank">НСПД / Публичная кадастровая карта</a> — актуальный публичный слой участков и поиск. <a href="https://cogisdemo.dataeast.com/portal/samples/cadastre_russia" target="_blank">CoGIS / DataEast</a> — доступная демонстрационная архивная карта с геометрией и атрибутами; дата конкретной выгрузки показывается в карточке.</p><p><a href="https://fgistp.economy.gov.ru/" target="_blank">ФГИС ТП</a> — документы территориального планирования.</p><p><a href="https://data.gov.ru/" target="_blank">Портал открытых данных РФ</a> и региональные порталы — наборы муниципальной инфраструктуры.</p><p><a href="https://docs.cntd.ru/" target="_blank">Кодекс / Техэксперт</a> — нормативно‑технические документы; интеграция требует проверки лицензии.</p></article><article class="card"><h3>Архитектура решения</h3><p>Leaflet совмещает базовые карты, динамический кадастровый растр ArcGIS, растр генплана и пользовательские изображения. Выбор участка параллельно проверяется по двум источникам; доступная геометрия выделяется без рисования тестовых контуров.</p></article></div><h2>Целевая аудитория</h2><div class="audience"><div class="persona"><b>Архитектор</b><span>Оценивает окружение, ограничения и контекст будущего объекта.</span></div><div class="persona"><b>Градостроитель</b><span>Сопоставляет ПЗЗ, территориальные зоны и существующую застройку.</span></div><div class="persona"><b>Девелопер</b><span>Проводит первичный скрининг участка до заказа официальных документов.</span></div><div class="persona"><b>Студент / исследователь</b><span>Анализирует городскую среду и проверяет ГИС‑гипотезы.</span></div></div><p class="drawerlead">Открытые источники: <a href="https://wiki.openstreetmap.org/wiki/Overpass_API" target="_blank">Overpass API и список серверов</a>; <a href="https://uag.ryazan.gov.ru/activities/gosudarstvennye_uslugi/" target="_blank">услуги ГИСОГД Рязанской области</a>.</p></section>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script type="module" src="/app.js"></script></body></html>
