@@ -15,6 +15,7 @@
     "db:sessions:cleanup:test": "node --env-file=.env.test tools/cleanup-sessions.mjs --test",
     "test": "node --test tests/*.test.mjs",
     "test:browser:account": "node --test tests/browser/account-dialog.test.mjs",
+    "test:browser:account-api": "node --test tests/browser/account-api.test.mjs",
     "test:db": "node --env-file=.env.test --test tests/integration/*.test.mjs"
   },
   "dependencies": {

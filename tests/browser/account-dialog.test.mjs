@@ -1,4 +1,4 @@
-// Run against the ordinary Node/PostgreSQL server, never a static UI substitute.
+// Dialog UI regression with controlled account errors. Real Node/PostgreSQL auth is tested in account-api.test.mjs.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
@@ -17,7 +17,7 @@ const viewports = [
   { width: 320, height: 240, touch: true },
 ];
 
-test('P13: account dialog acceptance on Node/PostgreSQL', { timeout: 180_000 }, async t => {
+test('P13/P14: account dialog UI regression with controlled API errors', { timeout: 180_000 }, async t => {
   const browser = await chromium.launch({
     executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH || undefined,
   });
@@ -27,6 +27,18 @@ test('P13: account dialog acceptance on Node/PostgreSQL', { timeout: 180_000 }, 
       await t.test(`${width}x${height}, ${touch ? 'touch' : 'mouse and keyboard'}`, async () => {
         const context = await browser.newContext({ viewport: { width, height }, hasTouch: touch, isMobile: touch });
         const page = await context.newPage();
+        const submitted = [];
+        await page.route('**/api/auth/me', route => route.fulfill({ json: { user: null } }));
+        for (const operation of ['login', 'register']) {
+          await page.route(`**/api/auth/${operation}`, route => {
+            submitted.push(route.request().postDataJSON());
+            return route.fulfill({ status: operation === 'login' ? 401 : 409, json: { error: {
+              code: operation === 'login' ? 'INVALID_CREDENTIALS' : 'EMAIL_EXISTS',
+              message: operation === 'login' ? 'Неверная почта или пароль.' : 'Почта уже используется.',
+              ...(operation === 'register' ? { fields: { email: 'Почта уже используется.' } } : {}),
+            } } });
+          });
+        }
         // The same pinned Leaflet release as index.html, without CDN availability
         // becoming a prerequisite for the account UI test. No API is mocked.
         for (const [file, contentType] of [['leaflet.js', 'text/javascript'], ['leaflet.css', 'text/css']]) {
@@ -139,9 +151,11 @@ test('P13: account dialog acceptance on Node/PostgreSQL', { timeout: 180_000 }, 
           for (const password of ['a'.repeat(12), '😀'.repeat(12), '😀'.repeat(128), ' '.repeat(12), 'e\u0301'.repeat(6), '  unchanged  ']) {
             await page.locator('#loginPassword').fill(password);
             await activate(submitLogin);
-            assert.equal(await page.locator('#loginPassword').inputValue(), password);
+            await page.locator('#accountLoginForm [role="status"]').filter({ hasText: 'Неверная почта или пароль.' }).waitFor();
+            assert.equal(submitted.at(-1).password, password);
+            assert.equal(await page.locator('#loginPassword').inputValue(), '');
             assert.equal(await page.locator('#loginPassword').getAttribute('aria-invalid'), null);
-            assert.match(await page.locator('#accountLoginForm [role="status"]').textContent(), /пока недоступны/);
+            assert.match(await page.locator('#accountLoginForm [role="status"]').textContent(), /Неверная почта или пароль/);
             await unchanged('login submit');
           }
           await page.locator('#loginPassword').fill('😀'.repeat(129));
@@ -156,11 +170,12 @@ test('P13: account dialog acceptance on Node/PostgreSQL', { timeout: 180_000 }, 
           assert.equal(await focus(), 'registerName');
           for (const name of ['😀'.repeat(80), '<img src=x onerror=alert(1)>']) {
             await page.locator('#registerName').fill(name);
+            await page.locator('#registerPassword').fill('😀'.repeat(12));
             assert.equal(await page.locator('#accountNameText').textContent(), name);
             assert.equal(await page.locator('#accountNameText > *').count(), 0);
             await unchanged('register input');
             await activate(submitRegister);
-            assert.match(await page.locator('#accountRegisterForm [role="status"]').textContent(), /пока недоступны/);
+            await page.locator('#accountRegisterForm [role="status"]').filter({ hasText: 'Почта уже используется.' }).waitFor();
             assert.equal(await dialog.locator('img').count(), 0);
             await unchanged('register submit');
           }
@@ -192,10 +207,11 @@ test('P13: account dialog acceptance on Node/PostgreSQL', { timeout: 180_000 }, 
           assert.equal(await page.locator('#accountNameText').textContent(), '');
           assert.equal(await page.locator('#accountNamePreview').isVisible(), false);
           assert.equal(await dialog.locator('[aria-invalid]').count(), 0);
-          assert.equal((await dialog.locator('[role="status"]').allTextContents()).join(''), '');
+          assert.equal((await dialog.locator('form [role="status"]').allTextContents()).join(''), '');
           await unchanged('close and clear');
           assert.equal(page.url(), originalURL);
-          assert.deepEqual(authRequests, []);
+          assert.equal(authRequests.length, 9);
+          assert.equal(submitted.length, 8);
           assert.deepEqual(alerts, []);
           assert.deepEqual(pageErrors, []);
 
@@ -273,7 +289,8 @@ test('P13: account dialog acceptance on Node/PostgreSQL', { timeout: 180_000 }, 
           await page.locator('#closeDrawer').click();
           assert.equal(await page.locator('#drawer').evaluate(element => element.classList.contains('open')), false);
           await unchanged('map regression');
-          assert.deepEqual(authRequests, []);
+          assert.equal(authRequests.length, 9);
+          assert.equal(submitted.length, 8);
           assert.deepEqual(pageErrors, []);
         } catch (error) {
           if (artifacts) {
