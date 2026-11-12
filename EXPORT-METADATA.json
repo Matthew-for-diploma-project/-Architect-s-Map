@@ -104,23 +104,53 @@
     "branch": "iteration-025-p13-account-dialog",
     "tag": "iteration-025",
     "tag_status": "local_only: git has no push credentials and the GitHub connector does not expose tag creation",
-    "commit_message": "feat: add account dialog for P13; browser acceptance pending",
-    "change": "Add account dialog with login/registration fields, keyboard/focus behavior, mobile styles, Unicode validation and text-only name preview. Browser acceptance is outstanding; API wiring remains P14.",
+    "commit_message": "fix: prevent P13 header overflow; browser acceptance partial",
+    "change": "Fix P13 mobile header overflow with a two-row header at up to 480px and aligned panel/drawer offsets. Browser forms, keyboard, validation and responsive UI were partly accepted; touch and direct Web Storage checks remain blocked. P14 is not started.",
     "application_source_modified": true,
     "sites_version_created": false,
     "source_integrity_scope": "Original iteration 13; original metadata, manifest and history remain unchanged.",
     "validation": {
-      "build": "passed; Worker rebuilt with /account-dialog.js",
+      "build": "passed; reproducible Worker SHA-256 84219d3877e06b95c16ec63ad743de50693273f3279b6bb04121790c24339756",
       "ordinary_tests_passed": 105,
       "new_dialog_unit_tests_passed": 4,
       "tests_failed": 0,
       "field_policy": "passed: client/server acceptance agrees on email, password and name Unicode boundaries, controls and lone surrogates",
       "http_resources": "passed: 4 exact source resources with MIME, 4 closed source/private paths through a real in-process HTTP adapter",
-      "browser_qa": "unverified: local Chromium fails socket() EPERM; Cloud Browser localhost refused; data URL rejected by browser URL policy",
-      "database_integration_tests": "not repeated: no backend/schema changes; PostgreSQL 17 not available in this environment",
-      "live_external_sources": "not verified in this client iteration",
+      "browser_qa": "partial: real Chromium reached the Worker HTTP server launched in its own terminal environment; forms, keyboard, validation, responsive UI and map regression checked. DevTools is blocked by organization policy; touch and direct Web Storage inspection remain unverified.",
+      "database_integration_tests": "not repeated: PostgreSQL 17, psql and Docker unavailable; no backend/schema changes; UI harness is not an integration test of Node account APIs",
+      "live_external_sources": "Leaflet CDN, OSM tiles, local genplan, archived CoGIS and Nominatim address search observed; a successful live NSPD response is not confirmed",
       "plan_step_complete": false,
-      "next_action": "Complete the real browser scenario in README section 10 before closing P13; keep the PR draft. P14 remains separate."
-    }
+      "next_action": "Complete the pending touch/Web Storage checks and ordinary Node/PostgreSQL browser run before closing P13 or creating its final PR. Keep P14 separate.",
+      "browser_viewports": [
+        "1363px wide",
+        "320x850",
+        "375x850",
+        "390x850",
+        "375x320",
+        "320x240",
+        "480x850",
+        "481x850",
+        "720x850"
+      ],
+      "browser_passed": [
+        "Login/register field counts, labels/autocomplete/password masking and initial email focus",
+        "Mouse and Left/Right/Home/End tabs, one selected tab, preserved email and cleared passwords",
+        "Tab/Shift+Tab cycles, native modal background blocking, Escape/close focus return and cleared fields/preview",
+        "Empty/invalid fields, aria-invalid and first-error focus; Unicode email and password/name code-point boundaries",
+        "Literal HTML-shaped name with no child HTML/images/alert; explicit unavailable message and unchanged URL",
+        "No /api/auth requests recorded by the HTTP server",
+        "No horizontal page/dialog overflow at 320/375/390px and low-window vertical scrolling",
+        "Map pan/zoom, satellite/genplan controls, panels, About drawer and mobile address search after dialog close"
+      ],
+      "pending_browser_checks": [
+        "Switch forms with touch in a permitted mobile emulation or physical browser",
+        "Inspect localStorage/sessionStorage before and after input, submit and close",
+        "Repeat README section 10 against the ordinary Node/PostgreSQL startup from section 2"
+      ],
+      "browser_blocker": "DevTools not allowed on this page: Your organization has blocked the use of DevTools on this page. No policy bypass attempted. PostgreSQL 17 / Docker are unavailable; the UI harness excludes Node account APIs.",
+      "out_of_scope_regression": "P31: at 1363px, collapsing side panels yields scrollWidth 1404. Reproduced with unchanged baseline HTML fc55f5c; not introduced by the P13 header fix."
+    },
+    "continued_from_commit_sha": "fc55f5c82932456a6653e93a5b94755141b4d953",
+    "pull_request_status": "not created: the requested successful browser acceptance condition is not met"
   }
 }
