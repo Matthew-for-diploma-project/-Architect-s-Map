@@ -32,6 +32,8 @@
 <style>
 .topbar,.workspace{min-width:0}.search{min-width:0}.account-button{flex-shrink:0;min-height:44px;padding:9px 14px;border:1px solid #81929b;border-radius:9px;background:transparent;color:#fff;font-weight:700}
 .account-button:hover{background:#2a3b45}.account-button:disabled{cursor:wait}
+.account-controls{display:flex;align-items:center;gap:6px;min-width:0;max-width:240px;flex-shrink:1}.account-name{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:14px}.account-controls [hidden]{display:none}.account-form :disabled{cursor:wait;opacity:.7}#accountRetry{margin-bottom:16px}
+@media(max-width:720px){.topbar .navbtn{display:none}.account-controls{margin-left:auto;max-width:calc(100% - 48px)}}
 .account-dialog{width:min(460px,calc(100% - 24px));max-height:calc(100vh - 24px);max-height:calc(100dvh - 24px);padding:24px;border:1px solid var(--line);border-radius:18px;background:var(--panel);color:var(--ink);box-shadow:var(--shadow);overflow:auto;overscroll-behavior:contain}
 .account-dialog::backdrop{background:#0c1929a6}
 .account-header{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}.account-header h2{margin:7px 0 18px;font-size:24px;letter-spacing:-.03em}
@@ -55,7 +57,7 @@
 </head>
 <body>
 <main class="app">
-  <header class="topbar"><div class="brand"><div class="logo">⌁</div>ГеоКонтекст</div><form class="search" id="searchForm"><input id="searchInput" aria-label="Поиск адреса или кадастрового номера" placeholder="Адрес или кадастровый номер"><button>Найти</button></form><button class="navbtn" id="aboutBtn">О проекте / НИР</button><button class="account-button" id="accountBtn" type="button" aria-haspopup="dialog" aria-controls="accountDialog" disabled>Войти</button></header>
+  <header class="topbar"><div class="brand"><div class="logo">⌁</div>ГеоКонтекст</div><form class="search" id="searchForm"><input id="searchInput" aria-label="Поиск адреса или кадастрового номера" placeholder="Адрес или кадастровый номер"><button>Найти</button></form><button class="navbtn" id="aboutBtn">О проекте / НИР</button><div class="account-controls"><span class="account-name" id="accountName" hidden></span><button class="account-button" id="accountBtn" type="button" aria-haspopup="dialog" aria-controls="accountDialog" disabled>Войти</button><button class="account-button" id="logoutBtn" type="button" hidden>Выйти</button></div></header>
   <section class="workspace" id="workspace">
     <aside class="sidebar" id="sidebar"><h2>Объекты территории</h2><p>Загрузка интерфейса…</p></aside>
     <div class="mapwrap"><div class="panel-buttons" aria-label="Управление панелями"><button class="panel-toggle" id="toggleSidebar" type="button" aria-expanded="true" aria-controls="sidebar" title="Свернуть левую панель">☰ <span>Слои</span></button><button class="panel-toggle" id="toggleDetails" type="button" aria-expanded="true" aria-controls="details" title="Свернуть правую панель">☰ <span>Сведения</span></button></div><div id="map" class="map"></div><div class="mapbadge"><b>Карта Рязани</b><br>подложки и свои рисунки — слева</div><div class="coord" id="coord">54.6296, 39.7420</div></div>
@@ -68,13 +70,13 @@
     <button id="accountLoginTab" type="button" role="tab" data-mode="login" aria-selected="true" aria-controls="accountLoginPanel">Вход</button>
     <button id="accountRegisterTab" type="button" role="tab" data-mode="register" aria-selected="false" aria-controls="accountRegisterPanel" tabindex="-1">Регистрация</button>
   </div>
-  <p class="account-notice" id="accountNotice">Вход и регистрация пока недоступны. Данные формы не отправляются. Вы можете продолжить работу с картой.</p>
+  <p class="account-notice" id="accountNotice" role="status" aria-live="polite">Проверяем состояние аккаунта…</p><button class="account-submit" id="accountRetry" type="button" hidden>Проверить состояние аккаунта</button>
   <div id="accountLoginPanel" role="tabpanel" aria-labelledby="accountLoginTab">
     <form class="account-form" id="accountLoginForm" method="dialog" novalidate>
       <div class="account-field"><label for="loginEmail">Электронная почта</label><input id="loginEmail" name="email" type="text" inputmode="email" autocomplete="username" autocapitalize="none" spellcheck="false" required aria-describedby="loginEmailError"><span class="account-error" id="loginEmailError"></span></div>
       <div class="account-field"><label for="loginPassword">Пароль</label><input id="loginPassword" name="password" type="password" autocomplete="current-password" required aria-describedby="loginPasswordHint loginPasswordError"><span class="account-hint" id="loginPasswordHint">От 12 до 128 символов. Пробелы учитываются.</span><span class="account-error" id="loginPasswordError"></span></div>
       <button class="account-submit" type="submit">Войти</button>
-      <p class="account-status" role="status" aria-live="polite" aria-atomic="true"></p>
+      <p class="account-status" tabindex="-1" role="status" aria-live="polite" aria-atomic="true"></p>
     </form>
   </div>
   <div id="accountRegisterPanel" role="tabpanel" aria-labelledby="accountRegisterTab" hidden>
@@ -84,7 +86,7 @@
       <div class="account-field"><label for="registerName">Имя</label><input id="registerName" name="name" type="text" autocomplete="nickname" required aria-describedby="registerNameHint registerNameError accountNamePreview"><span class="account-hint" id="registerNameHint">От 1 до 80 символов. Так вас будут видеть в личном кабинете.</span><span class="account-error" id="registerNameError"></span></div>
       <p class="account-name-preview" id="accountNamePreview" hidden>Ваше имя в профиле: <b id="accountNameText"></b></p>
       <button class="account-submit" type="submit">Зарегистрироваться</button>
-      <p class="account-status" role="status" aria-live="polite" aria-atomic="true"></p>
+      <p class="account-status" tabindex="-1" role="status" aria-live="polite" aria-atomic="true"></p>
     </form>
   </div>
 </dialog>

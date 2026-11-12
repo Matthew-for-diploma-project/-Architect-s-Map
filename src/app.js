@@ -1,7 +1,7 @@
 import { GENPLAN_BOUNDS } from './genplan-calibration.js';
 import { initAccountDialog } from './account-dialog.js';
 
-initAccountDialog();
+const account = initAccountDialog();
 
 const $ = id => document.getElementById(id);
 const sidebar = $('sidebar');
@@ -21,7 +21,7 @@ sidebar.innerHTML = `<div class="eyebrow">Рабочая область</div><h2
     </div>
   </section>
   <section class="layer"><strong>Мои карты и рисунки</strong><p>Добавьте PNG, JPEG или WebP. Перемещайте слой за маркер, растягивайте за угловые маркеры, меняйте поворот и прозрачность, затем зафиксируйте слой.</p>
-    <input id="imageFile" type="file" accept="image/png,image/jpeg,image/webp" multiple><div id="drawingList"></div><p id="drawingMessage" role="status"></p>
+    <input id="imageFile" type="file" accept="image/png,image/jpeg,image/webp" multiple disabled><div id="drawingList"></div><p id="drawingMessage" role="status"></p>
   </section>`;
 
 details.innerHTML = '<div id="inspector"><div class="eyebrow">Рабочая карта</div><h2>Карта Рязани</h2><p>Границы участков ЕГРН включены. Приблизьте карту и нажмите на участок — здесь появятся его кадастровые сведения.</p><div class="alert">Поиск сверху принимает адрес или кадастровый номер, например <b>62:29:0040006:531</b>.</div></div>';
@@ -456,6 +456,24 @@ async function searchParcel(cadastralNumber) {
 map.on('click', identifyParcel);
 
 const drawings = [];
+const personalPendingMessage = 'Проверяем состояние аккаунта. Личные действия временно недоступны.';
+function personalActionsReady() {
+  if (account.canUsePersonalActions()) return true;
+  $('drawingMessage').textContent = account.getState().phase === 'error'
+    ? 'Не удалось проверить аккаунт. Нажмите «Проверить вход» в шапке.' : personalPendingMessage;
+  return false;
+}
+account.subscribe(() => {
+  const blocked = !account.canUsePersonalActions();
+  for (const control of sidebar.querySelectorAll('#imageFile, .drawing-row input, .drawing-row button')) control.disabled = blocked;
+  for (const drawing of drawings) drawing.handles.eachLayer(marker => {
+    if (blocked) marker.dragging?.disable();
+    else if (!drawing.locked) marker.dragging?.enable();
+  });
+  if (blocked) personalActionsReady();
+  else if ($('drawingMessage').dataset.accountBlocked === 'true') $('drawingMessage').textContent = '';
+  $('drawingMessage').dataset.accountBlocked = String(blocked);
+});
 const opposite = { northWest: 'southEast', northEast: 'southWest', southEast: 'northWest', southWest: 'northEast' };
 const corners = ['northWest', 'northEast', 'southEast', 'southWest'];
 const cornerPoint = { northWest: b => b.getNorthWest(), northEast: b => b.getNorthEast(), southEast: b => b.getSouthEast(), southWest: b => b.getSouthWest() };
@@ -474,17 +492,19 @@ function rebuildHandles(d) {
   if (d.locked) return;
   const bounds = d.layer.getBounds();
   for (const corner of corners) {
-    const marker = L.marker(cornerPoint[corner](bounds), { draggable: true, icon: icon('image-handle'), zIndexOffset: 1000 }).addTo(d.handles);
+    const marker = L.marker(cornerPoint[corner](bounds), { draggable: account.canUsePersonalActions(), icon: icon('image-handle'), zIndexOffset: 1000 }).addTo(d.handles);
     marker.on('drag', () => {
+      if (!personalActionsReady()) return;
       const fixed = cornerPoint[opposite[corner]](d.layer.getBounds());
       d.layer.setBounds(L.latLngBounds(marker.getLatLng(), fixed));
     });
     marker.on('dragend', () => rebuildHandles(d));
   }
-  const move = L.marker(bounds.getCenter(), { draggable: true, icon: L.divIcon({ className: 'image-move', html: '✥', iconSize: [28, 28], iconAnchor: [14, 14] }), zIndexOffset: 1001 }).addTo(d.handles);
+  const move = L.marker(bounds.getCenter(), { draggable: account.canUsePersonalActions(), icon: L.divIcon({ className: 'image-move', html: '✥', iconSize: [28, 28], iconAnchor: [14, 14] }), zIndexOffset: 1001 }).addTo(d.handles);
   let last = null;
   move.on('dragstart', () => { last = move.getLatLng(); });
   move.on('drag', () => {
+    if (!personalActionsReady()) return;
     const now = move.getLatLng();
     const current = d.layer.getBounds();
     d.layer.setBounds([[current.getSouth() + now.lat - last.lat, current.getWest() + now.lng - last.lng], [current.getNorth() + now.lat - last.lat, current.getEast() + now.lng - last.lng]]);
@@ -499,6 +519,7 @@ function addDrawing(file) {
     const url = URL.createObjectURL(file);
     const image = new Image();
     image.onload = () => {
+      if (!personalActionsReady()) { URL.revokeObjectURL(url); reject(new Error(personalPendingMessage)); return; }
       const center = map.latLngToLayerPoint(map.getCenter());
       const width = Math.min(map.getSize().x * .55, 600);
       const height = width * image.height / image.width;
@@ -519,15 +540,16 @@ function addDrawingRow(d) {
   row.className = 'drawing-row';
   const safeName = d.file.name.replace(/[&<>"']/g, '');
   row.innerHTML = `<b title="${safeName}">${safeName}</b><label>Прозрачность <input class="drawing-opacity" aria-label="Прозрачность ${safeName}" type="range" min="0" max="1" step=".05" value=".65"></label><label>Поворот <output class="angle-value">0°</output><input class="drawing-angle" aria-label="Поворот ${safeName}" type="range" min="-180" max="180" step="1" value="0"></label><div class="drawing-actions"><button class="lock" type="button">Зафиксировать</button><button class="locate" type="button">Показать</button><button class="remove" type="button">Удалить</button></div>`;
-  row.querySelector('.drawing-opacity').addEventListener('input', e => d.layer.setOpacity(Number(e.target.value)));
-  row.querySelector('.drawing-angle').addEventListener('input', e => { d.angle = Number(e.target.value); row.querySelector('.angle-value').textContent = `${d.angle}°`; applyRotation(d); });
-  row.querySelector('.lock').addEventListener('click', e => { d.locked = !d.locked; e.currentTarget.textContent = d.locked ? 'Разблокировать' : 'Зафиксировать'; rebuildHandles(d); });
-  row.querySelector('.locate').addEventListener('click', () => map.fitBounds(d.layer.getBounds(), { padding: [40, 40] }));
-  row.querySelector('.remove').addEventListener('click', () => { map.removeLayer(d.layer); map.removeLayer(d.handles); URL.revokeObjectURL(d.url); drawings.splice(drawings.indexOf(d), 1); row.remove(); });
+  row.querySelector('.drawing-opacity').addEventListener('input', e => { if (personalActionsReady()) d.layer.setOpacity(Number(e.target.value)); });
+  row.querySelector('.drawing-angle').addEventListener('input', e => { if (!personalActionsReady()) return; d.angle = Number(e.target.value); row.querySelector('.angle-value').textContent = `${d.angle}°`; applyRotation(d); });
+  row.querySelector('.lock').addEventListener('click', e => { if (!personalActionsReady()) return; d.locked = !d.locked; e.currentTarget.textContent = d.locked ? 'Разблокировать' : 'Зафиксировать'; rebuildHandles(d); });
+  row.querySelector('.locate').addEventListener('click', () => { if (personalActionsReady()) map.fitBounds(d.layer.getBounds(), { padding: [40, 40] }); });
+  row.querySelector('.remove').addEventListener('click', () => { if (!personalActionsReady()) return; map.removeLayer(d.layer); map.removeLayer(d.handles); URL.revokeObjectURL(d.url); drawings.splice(drawings.indexOf(d), 1); row.remove(); });
   $('drawingList').append(row);
 }
 
 $('imageFile').addEventListener('change', async e => {
+  if (!personalActionsReady()) { e.target.value = ''; return; }
   for (const file of e.target.files) {
     try { const d = await addDrawing(file); addDrawingRow(d); $('drawingMessage').textContent = 'Слой добавлен: переместите, растяните или поверните его, затем зафиксируйте.'; }
     catch (error) { $('drawingMessage').textContent = error.message; }
