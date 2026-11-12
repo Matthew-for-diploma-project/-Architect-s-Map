@@ -74,9 +74,10 @@ export function createAccountState({ fetchImpl = globalThis.fetch, timeoutMs = 1
       publish({ phase: user ? 'authenticated' : 'guest', user, pending: null, error: null });
       return user;
     } catch (error) {
-      // A lost response may follow a committed mutation. A fresh me, rather
-      // than an automatic POST retry, reconciles the real cookie/session.
-      publish(operation === 'me' || error.uncertain
+      // Every logout failure needs a visible error/recheck, including a known
+      // rejection such as 403. A fresh me also reconciles lost mutation replies
+      // without automatically repeating a POST or assuming a successful exit.
+      publish(operation === 'me' || operation === 'logout' || error.uncertain
         ? { phase: 'error', user: null, pending: null, error: error.message }
         : { ...previous, pending: null, error: null });
       throw error;

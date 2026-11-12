@@ -199,6 +199,44 @@ test('P14: real cookie authentication on ordinary Node/PostgreSQL', { timeout: 1
       assert.deepEqual(await storage(page), before);
     });
 
+    for (const [width, touch] of [[1363, false], [320, true]]) {
+      await scenario(`logout-origin-rejection-${width}`, width, touch, async ({ page, context, activate, login }) => {
+        await page.goto(baseURL); await phase(page, 'guest');
+        await login(known); await phase(page, 'authenticated');
+        const before = await storage(page);
+        const cookieBefore = (await context.cookies(baseURL)).find(item => item.name === 'am_session');
+        let logoutCalls = 0;
+        page.on('request', request => { if (new URL(request.url()).pathname === '/api/auth/logout') logoutCalls++; });
+        await page.route('**/api/auth/logout', async route => {
+          // Exercise the real Origin guard while preserving this browser's
+          // session. Only the outgoing Origin changes; the 403 comes from Node.
+          const response = await route.fetch({ headers: { ...route.request().headers(), origin: 'https://untrusted.example.test' } });
+          assert.equal(response.status(), 403);
+          assert.equal((await response.json()).error.code, 'ORIGIN_REJECTED');
+          await route.fulfill({ response });
+        });
+        await activate(page.locator('#logoutBtn')); await phase(page, 'error');
+        await page.locator('#accountDialog[open]').waitFor();
+        assert.match(await page.locator('#accountNotice').textContent(), /источник|origin/i);
+        assert.equal(await page.locator('#accountRetry').isVisible(), true);
+        assert.equal(await page.evaluate(() => document.activeElement.id), 'accountRetry');
+        assert.equal(await page.locator('#loginEmail').isDisabled(), true);
+        assert.equal(await page.locator('#imageFile').isDisabled(), true);
+        assert.equal((await context.cookies(baseURL)).find(item => item.name === 'am_session')?.value, cookieBefore.value);
+        assert.equal(logoutCalls, 1);
+        if (artifacts) await page.screenshot({ path: resolve(artifacts, `logout-origin-rejection-${width}.png`) });
+        await page.unroute('**/api/auth/logout');
+        await activate(page.locator('#accountRetry')); await phase(page, 'authenticated');
+        assert.equal(await page.locator('#accountName').textContent(), known.name);
+        assert.equal(await page.locator('#accountDialog').getAttribute('open'), null);
+        assert.equal(logoutCalls, 1, 'Checking me must not repeat logout.');
+        await activate(page.locator('#logoutBtn')); await phase(page, 'guest');
+        assert.equal(logoutCalls, 2);
+        assert.equal((await context.cookies(baseURL)).some(item => item.name === 'am_session'), false);
+        assert.deepEqual(await storage(page), before);
+      });
+    }
+
     await scenario('committed-mutations-with-lost-responses', 375, true, async ({ page, activate, login }) => {
       await page.goto(baseURL); await phase(page, 'guest');
       const before = await storage(page);
