@@ -96,31 +96,31 @@
     "live_external_sources": "not verified"
   },
   "current_application": {
-    "iteration": 26,
+    "iteration": 27,
     "plan_step": "P14",
     "updated_on": "2026-11-12",
     "date_timezone": "Europe/Moscow",
-    "base_commit_sha": "6236860ac91a206a53a8ca2fc5004e09d3733597",
-    "branch": "iteration-026-p14-account-api",
-    "tag": "iteration-026",
-    "tag_status": "local_only: Git push lacks credentials and the GitHub connector cannot create remote tags; iteration-025 remains unchanged",
-    "commit_message": "feat: connect account forms and session state for P14",
-    "change": "Connect forms to real account APIs; restore HttpOnly cookie sessions, show literal names/logout, block unresolved personal actions, prevent duplicate requests and reconcile uncertain mutations with me before retrying.",
+    "base_commit_sha": "d1e9ffacc92fa56b00280f5a60657c600d890a75",
+    "branch": "iteration-027-p14-completion",
+    "tag": "iteration-027",
+    "tag_status": "local_only: git push lacks credentials and the GitHub connector cannot create remote tags; existing tags are not moved",
+    "commit_message": "fix: complete P14 logout error handling and acceptance",
+    "change": "Complete P14: show every failed logout, including an explicit 403, require me before another mutation, and repeat all Node/PostgreSQL/browser acceptance checks.",
     "application_source_modified": true,
     "sites_version_created": false,
     "source_integrity_scope": "Original iteration 13; original root metadata, manifest, documents and history remain unchanged.",
     "validation": {
-      "build": "passed; reproducible Worker SHA-256 b8c3b5ec94ee57e65acc846c6d641e276ff598cbcb3de74e2f1db28223634669",
-      "ordinary_tests_passed": 114,
-      "account_state_unit_tests_passed": 9,
+      "build": "passed; reproducible Worker SHA-256 8c828d6476711e9bc7a0c8b0927fa890c9e58d2014d5dc1e97c443d4d5992cdb",
+      "ordinary_tests_passed": 115,
+      "account_state_unit_tests_passed": 10,
       "tests_failed": 0,
       "database_integration_tests_passed": 69,
-      "database_integration_tests": "69 passed, 0 failed/skipped on the separate PostgreSQL 17.11 integration cluster; backend and migrations unchanged",
+      "database_integration_tests": "69 passed, 0 failed/skipped on a separate ordinary-role integration database in isolated PostgreSQL 17.11; browser database and role differ; backend and migrations unchanged",
       "browser_dialog_checks_passed": 7,
-      "browser_api_checks_passed": 7,
-      "browser_tests_passed": 14,
-      "browser_scenarios_passed": 12,
-      "browser_qa": "passed: six UI viewports with controlled auth errors plus six real PostgreSQL/fault scenarios; real registration/login/reload/logout on 1363/320/375px, HttpOnly cookie, trusted touch, unchanged Web Storage, Unicode/literal names, single-flight requests and uncertain-response reconciliation",
+      "browser_api_checks_passed": 9,
+      "browser_tests_passed": 16,
+      "browser_scenarios_passed": 14,
+      "browser_qa": "passed: six UI viewports plus eight real PostgreSQL/fault scenarios; real logout Origin rejection on 1363/320px preserves cookie, exposes error/retry and recovers via me before a successful logout",
       "browser_viewports": [
         "1363x900 UI",
         "320x850 UI/auth",
@@ -137,21 +137,27 @@
         "Exact Unicode/whitespace password payload; password cleared after request starts and no credential storage in URL/localStorage/sessionStorage",
         "Duplicate requestSubmit during registration sends one request; modal close while waiting clears fields without duplicating the mutation",
         "me 503, login network failure/429 with Retry-After, failed logout, and successful mutations with corrupt/lost responses recover via me",
-        "Original keyboard/focus/tab/Unicode/responsive UI and map/drawing regression on six viewports"
+        "Original keyboard/focus/tab/Unicode/responsive UI and map/drawing regression on six viewports",
+        "Real Node Origin guard returns logout 403 on desktop/320px; visible error and focused me retry; unchanged cookie, no automatic POST retry, subsequent logout succeeds"
       ],
-      "browser_test_isolation": "P14_TEST_DATABASE_URL must point to the same local _test DB as the ordinary Node server; probe verifies identity before registrations; cleanup only exact owned UUID-email/ID fixtures; QA-only auth limits 1000/1000",
-      "browser_response_fixtures": "UI suite controls me/401/409; API lifecycle uses real Node/PostgreSQL, with only named failure responses intercepted; pinned Leaflet JS/CSS are local in both suites",
+      "browser_test_isolation": "Different ordinary roles and separate browser/integration UTF8 _test databases on isolated PostgreSQL 17.11 at 127.0.0.1:55434; browser probe verifies identity; only owned UUID fixtures removed; QA-only browser auth limits 1000/1000",
+      "browser_response_fixtures": "UI suite controls me/401/409; API lifecycle and logout 403 use real Node/PostgreSQL; outgoing Origin alone is changed for 403, only other named outages are intercepted; pinned Leaflet JS/CSS local",
       "pending_browser_checks": [],
       "browser_blocker": null,
       "plan_step_complete": true,
       "out_of_scope_regression": "P31: existing collapsed-panel overflow at 1363px; no panel-layout fix in P14",
       "limitations": "Physical phone/on-screen keyboard, HTTPS proxy and successful live NSPD response not separately tested. Low-window UI and real cookie sessions passed. Guest controls/persistence remain later plan steps.",
-      "next_action": "P14 is complete. Continue with P15 only as a separate task after checking current remote main."
+      "next_action": "P14 completion is accepted in iteration 27. P15 has not started; continue only as a separate task after checking current remote main.",
+      "runtime": "Node 24.22.1 / npm 11.9.0 / PostgreSQL 17.11 / Chromium Headless Shell 156.0.8078.79 / Playwright 1.62.1"
     },
     "previous_step_merge": {
       "pull_request": 12,
       "merge_commit_sha": "6236860ac91a206a53a8ca2fc5004e09d3733597"
     },
-    "pull_request_status": "P14 passed acceptance; the final PR and merge are verified remotely after saving this commit."
+    "pull_request_status": "Continuation of merged P14 PR #13; final follow-up PR and main SHA are verified remotely after saving this commit.",
+    "previous_p14_merge": {
+      "pull_request": 13,
+      "merge_commit_sha": "d1e9ffacc92fa56b00280f5a60657c600d890a75"
+    }
   }
 }

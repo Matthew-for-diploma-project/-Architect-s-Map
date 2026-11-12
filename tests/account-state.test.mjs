@@ -127,6 +127,28 @@ test('logout has no body, is single-flight, and a failed logout never produces a
   assert.equal(account.getState().user, null);
 });
 
+test('a rejected logout exposes its error and requires me before another mutation', async () => {
+  for (const status of [400, 401, 403, 409, 413, 415, 429]) {
+    let posts = 0;
+    const account = createAccountState({ fetchImpl: async url => {
+      if (url.endsWith('/me')) return json({ user });
+      posts++;
+      return failure(status, status === 403 ? 'ORIGIN_REJECTED' : 'API_ERROR');
+    } });
+    await account.refresh();
+    await assert.rejects(account.logout(), error => error.status === status && !error.uncertain);
+    assert.equal(account.getState().phase, 'error');
+    assert.equal(account.getState().error, 'Запрос не выполнен.');
+    assert.equal(account.canUsePersonalActions(), false);
+    assert.equal(await account.logout(), null);
+    assert.equal(posts, 1);
+    await account.refresh();
+    assert.equal(account.getState().phase, 'authenticated');
+    assert.deepEqual(account.getState().user, user);
+    assert.equal(account.getState().error, null);
+  }
+});
+
 test('timeout aborts the actual request and leaves an explicit recoverable error', async () => {
   const account = createAccountState({ timeoutMs: 5, fetchImpl: (_url, { signal }) => new Promise((_resolve, reject) => {
     signal.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError')), { once: true });
