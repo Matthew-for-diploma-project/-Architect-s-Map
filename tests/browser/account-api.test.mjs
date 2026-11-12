@@ -16,8 +16,20 @@ const storage = page => page.evaluate(() => ({
   session: Object.fromEntries(Object.keys(sessionStorage).sort().map(key => [key, sessionStorage.getItem(key)])),
 }));
 const credentials = { password: '  😀😀😀😀😀😀😀😀😀😀😀😀  ', name: '<img src=x onerror=alert(1)>' };
+async function personalControls(page, blocked) {
+  assert.equal(await page.locator('#addDrawing').isVisible(), true);
+  assert.equal(await page.locator('#imageFile').isDisabled(), blocked);
+  assert.equal(await page.locator('#drawingOpacity').isDisabled(), blocked);
+  assert.equal(await page.locator('#drawingOpacity').isVisible(), !blocked);
+  assert.equal(await page.locator('#drawingOpacityGuest').isVisible(), blocked);
+}
+async function uncoverSidebar(page) {
+  if (await page.evaluate(() => innerWidth <= 1050 && !document.querySelector('#workspace').classList.contains('details-collapsed'))) {
+    await page.locator('#toggleDetails').click();
+  }
+}
 
-test('P14: real cookie authentication on ordinary Node/PostgreSQL', { timeout: 180_000 }, async t => {
+test('P14/P15: real sessions and access to personal controls', { timeout: 240_000 }, async t => {
   const databaseURL = process.env.P14_TEST_DATABASE_URL;
   assert.ok(databaseURL, 'Set P14_TEST_DATABASE_URL to an isolated database whose name ends in _test.');
   const url = new URL(databaseURL);
@@ -81,6 +93,9 @@ test('P14: real cookie authentication on ordinary Node/PostgreSQL', { timeout: 1
         const data = { ...credentials, ...(width === 320 ? { name: '😀'.repeat(80) } : {}), email: `p14-ui-${randomUUID()}@example.test` };
         ownedEmails.push(data.email); known ??= data;
         await page.goto(baseURL); await phase(page, 'guest');
+        await uncoverSidebar(page);
+        await personalControls(page, true);
+        assert.equal(await page.locator('#drawingList .drawing-row').count(), 0);
         await page.evaluate(() => { localStorage.setItem('p14-sentinel', 'local'); sessionStorage.setItem('p14-sentinel', 'session'); });
         const before = await storage(page);
         const originalURL = page.url();
@@ -92,7 +107,9 @@ test('P14: real cookie authentication on ordinary Node/PostgreSQL', { timeout: 1
           await gate;
           await route.fulfill({ response });
         });
-        await open(); await activate(page.locator('#accountRegisterTab'));
+        // Register directly from the permanently visible guest add control.
+        await activate(page.locator('#addDrawing')); await page.locator('#accountDialog[open]').waitFor();
+        await activate(page.locator('#accountRegisterTab'));
         for (const [id, value] of [['registerEmail', data.email], ['registerPassword', data.password], ['registerName', data.name]]) await page.locator(`#${id}`).fill(value);
         assert.equal(await page.locator('#accountNameText').textContent(), data.name);
         assert.equal(await page.locator('#accountNameText > *').count(), 0);
@@ -113,6 +130,12 @@ test('P14: real cookie authentication on ordinary Node/PostgreSQL', { timeout: 1
         assert.equal(await page.locator('#accountName > *').count(), 0);
         assert.equal(await page.locator('#logoutBtn').isVisible(), true);
         assert.equal(await page.locator('#accountDialog').getAttribute('open'), null);
+        await personalControls(page, false);
+        assert.equal(await page.locator('#drawingList .drawing-row').count(), 0);
+        await page.locator('#drawingOpacity').press('Home');
+        await page.locator('#drawingOpacity').press('ArrowRight');
+        assert.equal(await page.locator('.leaflet-drawings-pane').evaluate(element => element.style.opacity), '0.05');
+        await page.locator('#drawingOpacity').press('End');
         const cookie = (await context.cookies(baseURL)).find(item => item.name === 'am_session');
         assert.ok(cookie?.httpOnly);
         assert.equal(cookie.sameSite, 'Lax');
@@ -121,18 +144,41 @@ test('P14: real cookie authentication on ordinary Node/PostgreSQL', { timeout: 1
         assert.deepEqual(await storage(page), before);
         if (artifacts) await page.screenshot({ path: resolve(artifacts, `authenticated-${width}.png`) });
         await page.reload(); await phase(page, 'authenticated');
+        await uncoverSidebar(page);
+        await personalControls(page, false);
         assert.equal(await page.locator('#accountName').textContent(), data.name);
-        await page.locator('#imageFile').setInputFiles({ name: 'p14-guard.jpg', mimeType: 'image/jpeg', buffer: await readFile(new URL('../../src/genplan.jpg', import.meta.url)) });
+        const [chooser] = await Promise.all([page.waitForEvent('filechooser'), activate(page.locator('#addDrawing'))]);
+        await chooser.setFiles({ name: 'p15-guard.jpg', mimeType: 'image/jpeg', buffer: await readFile(new URL('../../src/genplan.jpg', import.meta.url)) });
         await page.locator('#drawingList .drawing-row').waitFor();
+        await page.locator('#drawingOpacity').press('Home');
+        for (let step = 0; step < 8; step++) await page.locator('#drawingOpacity').press('ArrowRight');
+        const drawingBefore = await page.locator('.leaflet-drawings-pane img').evaluate(element => ({ opacity: element.style.opacity, transform: element.style.transform }));
         let finishLogout;
         const logoutGate = new Promise(resolve => { finishLogout = resolve; });
         await page.route('**/api/auth/logout', async route => { const response = await route.fetch(); await logoutGate; await route.fulfill({ response }); });
         await activate(page.locator('#logoutBtn')); await phase(page, 'loading');
+        await personalControls(page, true);
         assert.equal(await page.locator('#imageFile').isDisabled(), true);
         assert.ok(await page.locator('.drawing-row input, .drawing-row button').evaluateAll(controls => controls.every(control => control.disabled)));
         assert.equal(await page.locator('.image-handle.leaflet-marker-draggable, .image-move.leaflet-marker-draggable').count(), 0);
         finishLogout(); await phase(page, 'guest');
         await page.unroute('**/api/auth/logout');
+        await personalControls(page, true);
+        await page.locator('#drawingOpacity').evaluate(element => { element.value = '.1'; element.dispatchEvent(new Event('input', { bubbles: true })); });
+        await page.locator('#accountDialog[open]').waitFor();
+        assert.equal(await page.locator('#drawingOpacity').inputValue(), '0.4');
+        assert.equal(await page.locator('.leaflet-drawings-pane').evaluate(element => element.style.opacity), '0.4');
+        await page.keyboard.press('Escape');
+        await page.waitForFunction(() => !document.querySelector('#accountDialog').open);
+        await page.locator('.drawing-row').evaluate(row => {
+          for (const selector of ['.drawing-opacity', '.drawing-angle']) {
+            const input = row.querySelector(selector); input.value = '0'; input.dispatchEvent(new Event('input', { bubbles: true }));
+          }
+          for (const selector of ['.lock', '.remove']) row.querySelector(selector).dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        });
+        assert.equal(await page.locator('.drawing-row').count(), 1);
+        assert.deepEqual(await page.locator('.leaflet-drawings-pane img').evaluate(element => ({ opacity: element.style.opacity, transform: element.style.transform })), drawingBefore);
+        assert.equal(await page.locator('.drawing-row .lock').textContent(), 'Зафиксировать');
         assert.equal((await context.cookies(baseURL)).some(item => item.name === 'am_session'), false);
         await page.reload(); await phase(page, 'guest');
         await login({ ...data, password: 'wrong password' });
@@ -140,7 +186,9 @@ test('P14: real cookie authentication on ordinary Node/PostgreSQL', { timeout: 1
         assert.equal(await page.locator('#loginPassword').inputValue(), '');
         await page.locator('#loginPassword').fill(data.password);
         await activate(page.locator('#accountLoginForm button[type="submit"]')); await phase(page, 'authenticated');
+        await personalControls(page, false);
         await activate(page.locator('#logoutBtn')); await phase(page, 'guest');
+        await personalControls(page, true);
         await open(); await activate(page.locator('#accountRegisterTab'));
         for (const [id, value] of [['registerEmail', data.email], ['registerPassword', data.password], ['registerName', 'Повтор']]) await page.locator(`#${id}`).fill(value);
         await activate(page.locator('#accountRegisterForm button[type="submit"]'));
@@ -152,6 +200,44 @@ test('P14: real cookie authentication on ordinary Node/PostgreSQL', { timeout: 1
         if (artifacts) await page.screenshot({ path: resolve(artifacts, `lifecycle-${width}.png`) });
       });
     }
+
+    await scenario('decode-cancelled-across-sessions', 1363, false, async ({ page, activate, login }) => {
+      await page.goto(baseURL); await phase(page, 'guest');
+      await login(known); await phase(page, 'authenticated');
+      // Delay the real image's decoded callback, then release it only after
+      // logout and another successful login. A phase-only guard would fail.
+      await page.evaluate(() => {
+        const NativeImage = window.Image, nativeRevoke = URL.revokeObjectURL.bind(URL);
+        window.p15Revoked = [];
+        URL.revokeObjectURL = url => { window.p15Revoked.push(url); nativeRevoke(url); };
+        window.Image = function(...args) {
+          const image = new NativeImage(...args);
+          let onload;
+          Object.defineProperty(image, 'onload', {
+            get: () => onload,
+            set(callback) {
+              onload = callback;
+              image.addEventListener('load', () => { window.p15FinishDecode = () => callback.call(image); }, { once: true });
+            },
+          });
+          window.p15DecodeImage = image;
+          window.Image = NativeImage;
+          return image;
+        };
+      });
+      await page.locator('#imageFile').setInputFiles({ name: 'p15-delayed.jpg', mimeType: 'image/jpeg', buffer: await readFile(new URL('../../src/genplan.jpg', import.meta.url)) });
+      await page.waitForFunction(() => typeof window.p15FinishDecode === 'function');
+      const pendingURL = await page.evaluate(() => window.p15DecodeImage.src);
+      await activate(page.locator('#logoutBtn')); await phase(page, 'guest');
+      await login(known); await phase(page, 'authenticated');
+      await page.evaluate(() => window.p15FinishDecode());
+      await page.locator('#drawingMessage').filter({ hasText: 'состояние аккаунта изменилось' }).waitFor();
+      assert.equal(await page.locator('.drawing-row, .leaflet-drawings-pane img, .image-handle, .image-move').count(), 0);
+      assert.equal(await page.locator('#imageFile').inputValue(), '');
+      assert.ok((await page.evaluate(() => window.p15Revoked)).includes(pendingURL));
+      await personalControls(page, false);
+      await activate(page.locator('#logoutBtn')); await phase(page, 'guest');
+    });
 
     await scenario('session-failure-and-retry', 1363, false, async ({ page, open, activate }) => {
       let release;
@@ -170,7 +256,7 @@ test('P14: real cookie authentication on ordinary Node/PostgreSQL', { timeout: 1
       assert.equal(await page.locator('#loginEmail').isDisabled(), true);
       await page.unroute('**/api/auth/me');
       await activate(page.locator('#accountRetry')); await phase(page, 'guest');
-      assert.equal(await page.locator('#imageFile').isDisabled(), false);
+      await personalControls(page, true);
       assert.equal(await page.evaluate(() => document.activeElement.id), 'loginEmail');
     });
 
