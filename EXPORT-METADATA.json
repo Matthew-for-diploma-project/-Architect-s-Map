@@ -99,14 +99,14 @@
     "iteration": 28,
     "plan_step": "P15",
     "status": "in_progress",
-    "checkpoint": "P15-C02",
+    "checkpoint": "P15-C03",
     "updated_on": "2026-11-13",
     "date_timezone": "Europe/Moscow",
     "base_commit_sha": "a321ffc85ed12507a32c36dcf152996e44ab581b",
     "branch": "iteration-028-p15-guest-controls",
     "tag": null,
     "tag_status": "not_created: acceptance pending",
-    "commit_message": "wip(P15): preserve guest controls and authenticated action guards",
+    "commit_message": "test(P15): verify guest controls and account UI on six viewports",
     "change": "Always show add drawing and global opacity controls; guest activation opens account dialog; guard file decoding and personal events.",
     "application_source_modified": true,
     "sites_version_created": false,
@@ -116,9 +116,9 @@
       "ordinary_tests_passed": 115,
       "tests_failed": 0,
       "database_integration_tests": "not_run_for_P15",
-      "browser_qa": "pending: existing drawing regression needs authenticated session; system Chromium cannot create Unix socket; standard Headless Shell download is invalid",
+      "browser_qa": "UI 7/7 passed on six viewports with Headless Shell 153.0.8010.0; real Node/PostgreSQL account-api acceptance pending",
       "plan_step_complete": false,
-      "next_action": "Adapt UI regression for P15, run real Node/PostgreSQL lifecycle and both browser suites."
+      "next_action": "Run real account lifecycle/decode cancellation and full PostgreSQL tests, then document acceptance."
     }
   }
 }
