@@ -134,7 +134,8 @@ test('P14/P15: real sessions and access to personal controls', { timeout: 240_00
         assert.equal(await page.locator('#drawingList .drawing-row').count(), 0);
         await page.locator('#drawingOpacity').press('Home');
         await page.locator('#drawingOpacity').press('ArrowRight');
-        assert.equal(await page.locator('.leaflet-drawings-pane').evaluate(element => element.style.opacity), '0.05');
+        assert.equal(await page.locator('#drawingOpacity').inputValue(), '0.05');
+        assert.equal(await page.locator('.leaflet-drawings-pane').evaluate(element => getComputedStyle(element).opacity), '1');
         await page.locator('#drawingOpacity').press('End');
         const cookie = (await context.cookies(baseURL)).find(item => item.name === 'am_session');
         assert.ok(cookie?.httpOnly);
@@ -167,7 +168,7 @@ test('P14/P15: real sessions and access to personal controls', { timeout: 240_00
         await page.locator('#drawingOpacity').evaluate(element => { element.value = '.1'; element.dispatchEvent(new Event('input', { bubbles: true })); });
         await page.locator('#accountDialog[open]').waitFor();
         assert.equal(await page.locator('#drawingOpacity').inputValue(), '0.4');
-        assert.equal(await page.locator('.leaflet-drawings-pane').evaluate(element => element.style.opacity), '0.4');
+        assert.equal(await page.locator('.leaflet-drawings-pane img').evaluate(element => Number(element.style.opacity)), .65 * .4);
         await page.keyboard.press('Escape');
         await page.waitForFunction(() => !document.querySelector('#accountDialog').open);
         await page.locator('.drawing-row').evaluate(row => {

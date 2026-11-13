@@ -16,6 +16,7 @@
     "test": "node --test tests/*.test.mjs",
     "test:browser:account": "node --test tests/browser/account-dialog.test.mjs",
     "test:browser:account-api": "node --test tests/browser/account-api.test.mjs",
+    "test:browser:drawings": "node --test tests/browser/drawing-layer.test.mjs",
     "test:db": "node --env-file=.env.test --test tests/integration/*.test.mjs"
   },
   "dependencies": {

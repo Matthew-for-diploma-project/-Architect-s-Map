@@ -46,7 +46,11 @@ map.getPane('parcels').style.zIndex = 430;
 map.createPane('parcelHighlight');
 map.getPane('parcelHighlight').style.zIndex = 440;
 map.createPane('drawings');
-map.getPane('drawings').style.zIndex = 500;
+// Above every built-in data pane (popupPane is 700). Map controls stay in
+// Leaflet's separate control container; editor handles have their own pane.
+map.getPane('drawings').style.zIndex = 750;
+map.createPane('drawingHandles');
+map.getPane('drawingHandles').style.zIndex = 760;
 
 const bases = {
   osm: L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '© OpenStreetMap contributors', maxZoom: 19 }),
@@ -464,6 +468,7 @@ async function searchParcel(cadastralNumber) {
 map.on('click', identifyParcel);
 
 const drawings = [];
+const drawingLayers = L.layerGroup().addTo(map);
 const personalPendingMessage = 'Проверяем состояние аккаунта. Личные действия временно недоступны.';
 let drawingOpacity = 1;
 let personalGeneration = 0;
@@ -513,10 +518,13 @@ $('drawingOpacityGuest').addEventListener('keydown', event => {
 function changeDrawingOpacity() {
   if (!personalActionsReady({ open: true })) { $('drawingOpacity').value = String(drawingOpacity); return; }
   drawingOpacity = Number($('drawingOpacity').value);
-  map.getPane('drawings').style.opacity = String(drawingOpacity);
+  for (const drawing of drawings) applyDrawingOpacity(drawing);
 }
 $('drawingOpacity').addEventListener('input', changeDrawingOpacity);
 $('drawingOpacity').addEventListener('change', changeDrawingOpacity);
+function applyDrawingOpacity(d) {
+  d.layer.setOpacity(d.opacity * drawingOpacity);
+}
 const opposite = { northWest: 'southEast', northEast: 'southWest', southEast: 'northWest', southWest: 'northEast' };
 const corners = ['northWest', 'northEast', 'southEast', 'southWest'];
 const cornerPoint = { northWest: b => b.getNorthWest(), northEast: b => b.getNorthEast(), southEast: b => b.getSouthEast(), southWest: b => b.getSouthWest() };
@@ -535,7 +543,7 @@ function rebuildHandles(d) {
   if (d.locked) return;
   const bounds = d.layer.getBounds();
   for (const corner of corners) {
-    const marker = L.marker(cornerPoint[corner](bounds), { draggable: account.canUsePersonalActions(), icon: icon('image-handle'), zIndexOffset: 1000 }).addTo(d.handles);
+    const marker = L.marker(cornerPoint[corner](bounds), { pane: 'drawingHandles', draggable: account.canUsePersonalActions(), icon: icon('image-handle'), zIndexOffset: 1000 }).addTo(d.handles);
     marker.on('drag', () => {
       if (!personalActionsReady()) return;
       const fixed = cornerPoint[opposite[corner]](d.layer.getBounds());
@@ -543,7 +551,7 @@ function rebuildHandles(d) {
     });
     marker.on('dragend', () => rebuildHandles(d));
   }
-  const move = L.marker(bounds.getCenter(), { draggable: account.canUsePersonalActions(), icon: L.divIcon({ className: 'image-move', html: '✥', iconSize: [28, 28], iconAnchor: [14, 14] }), zIndexOffset: 1001 }).addTo(d.handles);
+  const move = L.marker(bounds.getCenter(), { pane: 'drawingHandles', draggable: account.canUsePersonalActions(), icon: L.divIcon({ className: 'image-move', html: '✥', iconSize: [28, 28], iconAnchor: [14, 14] }), zIndexOffset: 1001 }).addTo(d.handles);
   let last = null;
   move.on('dragstart', () => { last = move.getLatLng(); });
   move.on('drag', () => {
@@ -568,7 +576,9 @@ function addDrawing(file, generation) {
       const width = Math.min(map.getSize().x * .55, 600);
       const height = width * image.height / image.width;
       const bounds = L.latLngBounds(map.layerPointToLatLng(center.subtract([width / 2, height / 2])), map.layerPointToLatLng(center.add([width / 2, height / 2])));
-      const d = { file, url, angle: 0, locked: false, layer: L.imageOverlay(url, bounds, { opacity: .65, pane: 'drawings', interactive: false }).addTo(map), handles: L.layerGroup().addTo(map) };
+      const d = { file, url, angle: 0, opacity: .65, locked: false,
+        layer: L.imageOverlay(url, bounds, { opacity: .65 * drawingOpacity, pane: 'drawings', interactive: false }).addTo(drawingLayers),
+        handles: L.layerGroup().addTo(drawingLayers) };
       drawings.push(d);
       applyRotation(d);
       rebuildHandles(d);
@@ -584,11 +594,15 @@ function addDrawingRow(d) {
   row.className = 'drawing-row';
   const safeName = d.file.name.replace(/[&<>"']/g, '');
   row.innerHTML = `<b title="${safeName}">${safeName}</b><label>Прозрачность <input class="drawing-opacity" aria-label="Прозрачность ${safeName}" type="range" min="0" max="1" step=".05" value=".65"></label><label>Поворот <output class="angle-value">0°</output><input class="drawing-angle" aria-label="Поворот ${safeName}" type="range" min="-180" max="180" step="1" value="0"></label><div class="drawing-actions"><button class="lock" type="button">Зафиксировать</button><button class="locate" type="button">Показать</button><button class="remove" type="button">Удалить</button></div>`;
-  row.querySelector('.drawing-opacity').addEventListener('input', e => { if (personalActionsReady()) d.layer.setOpacity(Number(e.target.value)); });
+  row.querySelector('.drawing-opacity').addEventListener('input', e => {
+    if (!personalActionsReady()) return;
+    d.opacity = Number(e.target.value);
+    applyDrawingOpacity(d);
+  });
   row.querySelector('.drawing-angle').addEventListener('input', e => { if (!personalActionsReady()) return; d.angle = Number(e.target.value); row.querySelector('.angle-value').textContent = `${d.angle}°`; applyRotation(d); });
   row.querySelector('.lock').addEventListener('click', e => { if (!personalActionsReady()) return; d.locked = !d.locked; e.currentTarget.textContent = d.locked ? 'Разблокировать' : 'Зафиксировать'; rebuildHandles(d); });
   row.querySelector('.locate').addEventListener('click', () => { if (personalActionsReady()) map.fitBounds(d.layer.getBounds(), { padding: [40, 40] }); });
-  row.querySelector('.remove').addEventListener('click', () => { if (!personalActionsReady()) return; map.removeLayer(d.layer); map.removeLayer(d.handles); URL.revokeObjectURL(d.url); drawings.splice(drawings.indexOf(d), 1); row.remove(); });
+  row.querySelector('.remove').addEventListener('click', () => { if (!personalActionsReady()) return; drawingLayers.removeLayer(d.layer); drawingLayers.removeLayer(d.handles); URL.revokeObjectURL(d.url); drawings.splice(drawings.indexOf(d), 1); row.remove(); });
   $('drawingList').append(row);
 }
 
