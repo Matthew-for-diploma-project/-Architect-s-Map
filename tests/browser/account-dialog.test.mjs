@@ -311,7 +311,8 @@ test('P13–P15: account UI and guest personal controls', { timeout: 240_000 }, 
             assert.equal(await page.locator('#drawingList .drawing-row').count(), 0);
             await page.locator('#drawingOpacity').press('Home');
             await page.locator('#drawingOpacity').press('ArrowRight');
-            assert.equal(await page.locator('.leaflet-drawings-pane').evaluate(element => element.style.opacity), '0.05');
+            assert.equal(await page.locator('#drawingOpacity').inputValue(), '0.05');
+            assert.equal(await page.locator('.leaflet-drawings-pane').evaluate(element => getComputedStyle(element).opacity), '1');
             await page.locator('#drawingOpacity').press('End');
             await page.locator('#imageFile').setInputFiles({
               name: 'p13-acceptance.jpg', mimeType: 'image/jpeg',
