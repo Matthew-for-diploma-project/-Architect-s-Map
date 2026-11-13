@@ -41,8 +41,10 @@ test('network failure is an unresolved error, never a guest; retry can restore e
   assert.equal(account.canUsePersonalActions(), false);
   mode = 'guest'; await account.refresh();
   assert.equal(account.getState().phase, 'guest');
+  assert.equal(account.canUsePersonalActions(), false);
   mode = 'user'; await account.refresh();
   assert.equal(account.getState().phase, 'authenticated');
+  assert.equal(account.canUsePersonalActions(), true);
 });
 
 test('registration sends exact password/allowed fields, prevents overlapping requests, and blocks personal actions until acknowledged', async () => {
@@ -124,6 +126,7 @@ test('logout has no body, is single-flight, and a failed logout never produces a
   response = new Response(null, { status: 204 });
   await account.logout();
   assert.equal(account.getState().phase, 'guest');
+  assert.equal(account.canUsePersonalActions(), false);
   assert.equal(account.getState().user, null);
 });
 

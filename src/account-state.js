@@ -92,6 +92,6 @@ export function createAccountState({ fetchImpl = globalThis.fetch, timeoutMs = 1
       return perform(mode, { email: data.email, password: data.password, ...(mode === 'register' ? { name: data.name } : {}) });
     },
     logout: () => perform('logout'),
-    canUsePersonalActions: () => ['guest', 'authenticated'].includes(state.phase) && !state.pending,
+    canUsePersonalActions: () => state.phase === 'authenticated' && !state.pending,
   });
 }

@@ -17,7 +17,7 @@ const viewports = [
   { width: 320, height: 240, touch: true },
 ];
 
-test('P13/P14: account dialog UI regression with controlled API errors', { timeout: 180_000 }, async t => {
+test('P13–P15: account UI and guest personal controls', { timeout: 240_000 }, async t => {
   const browser = await chromium.launch({
     executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH || undefined,
   });
@@ -28,10 +28,14 @@ test('P13/P14: account dialog UI regression with controlled API errors', { timeo
         const context = await browser.newContext({ viewport: { width, height }, hasTouch: touch, isMobile: touch });
         const page = await context.newPage();
         const submitted = [];
+        let authorizeDrawingFixture = false;
         await page.route('**/api/auth/me', route => route.fulfill({ json: { user: null } }));
         for (const operation of ['login', 'register']) {
           await page.route(`**/api/auth/${operation}`, route => {
             submitted.push(route.request().postDataJSON());
+            if (operation === 'login' && authorizeDrawingFixture) return route.fulfill({ json: { user: {
+              id: '15a00000-0000-4000-8000-000000000001', email: 'p15-ui@example.test', name: 'UI fixture',
+            } } });
             return route.fulfill({ status: operation === 'login' ? 401 : 409, json: { error: {
               code: operation === 'login' ? 'INVALID_CREDENTIALS' : 'EMAIL_EXISTS',
               message: operation === 'login' ? 'Неверная почта или пароль.' : 'Почта уже используется.',
@@ -40,7 +44,7 @@ test('P13/P14: account dialog UI regression with controlled API errors', { timeo
           });
         }
         // The same pinned Leaflet release as index.html, without CDN availability
-        // becoming a prerequisite for the account UI test. No API is mocked.
+        // becoming a prerequisite for this controlled UI regression.
         for (const [file, contentType] of [['leaflet.js', 'text/javascript'], ['leaflet.css', 'text/css']]) {
           await page.route(`https://unpkg.com/leaflet@1.9.4/dist/${file}`, route => route.fulfill({
             path: fileURLToPath(new URL(`../../node_modules/leaflet/dist/${file}`, import.meta.url)), contentType,
@@ -48,6 +52,8 @@ test('P13/P14: account dialog UI regression with controlled API errors', { timeo
         }
         page.setDefaultTimeout(10_000);
         const authRequests = [], pageErrors = [], alerts = [], failedRequests = [];
+        let fileChoosers = 0;
+        page.on('filechooser', () => fileChoosers++);
         page.on('request', request => {
           if (new URL(request.url()).pathname.startsWith('/api/auth')) authRequests.push(request.url());
         });
@@ -71,7 +77,7 @@ test('P13/P14: account dialog UI regression with controlled API errors', { timeo
             sessionStorage.setItem('p13-acceptance-sentinel', 'preserve-session');
             window.p13Pointers = [];
             document.addEventListener('pointerdown', event => {
-              if (event.target.closest('[role="tab"]')) {
+              if (event.target.closest('[role="tab"], #addDrawing, #drawingOpacityGuest')) {
                 window.p13Pointers.push({ type: event.pointerType, trusted: event.isTrusted });
               }
             });
@@ -84,6 +90,54 @@ test('P13/P14: account dialog UI regression with controlled API errors', { timeo
             assert.equal(await page.locator('[role="tab"][aria-selected="true"]').count(), 1);
             assert.equal(await page.locator('[role="tab"][aria-selected="true"]').getAttribute('id'), id);
           };
+          // Both guest entry points stay present with an empty list. Native
+          // buttons cover pointer/Enter/Space; range keys must also open auth.
+          // On narrow screens the existing details panel overlays the sidebar.
+          if (width <= 1050) await activate(page.locator('#toggleDetails'));
+          const guestOpacity = await page.locator('.leaflet-drawings-pane').evaluate(element => element.style.opacity);
+          const guestUnchanged = async () => {
+            assert.equal(await page.locator('#imageFile').isDisabled(), true);
+            assert.equal(await page.locator('#imageFile').inputValue(), '');
+            assert.equal(await page.locator('#drawingOpacity').inputValue(), '1');
+            assert.equal(await page.locator('.leaflet-drawings-pane').evaluate(element => element.style.opacity), guestOpacity);
+            assert.equal(await page.locator('#drawingList .drawing-row').count(), 0);
+            assert.equal(fileChoosers, 0);
+            await unchanged('guest personal controls');
+          };
+          const guestOpens = async action => {
+            await action();
+            await page.locator('#accountDialog[open]').waitFor();
+            assert.equal(await focus(), 'loginEmail');
+            await activate(register);
+            assert.equal(await dialog.locator('input:visible').count(), 3);
+            await page.keyboard.press('Escape');
+            await page.waitForFunction(() => !document.querySelector('#accountDialog').open
+              && [...document.querySelectorAll('#accountDialog input')].every(input => input.value === ''));
+            await guestUnchanged();
+          };
+          assert.match(await page.locator('#personalAccess').textContent(), /Войдите или зарегистрируйтесь/);
+          for (const id of ['addDrawing', 'drawingOpacityGuest']) {
+            const control = page.locator(`#${id}`);
+            assert.equal(await control.isVisible(), true);
+            assert.match(await control.getAttribute('class'), /personal-locked/);
+            await guestOpens(() => activate(control));
+            for (const key of ['Enter', 'Space']) await guestOpens(() => control.press(key));
+          }
+          for (const key of ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End', 'PageUp', 'PageDown']) {
+            await guestOpens(() => page.locator('#drawingOpacityGuest').press(key));
+          }
+          await guestOpens(async () => page.locator('#imageFile').setInputFiles({
+            name: 'p15-guest.jpg', mimeType: 'image/jpeg', buffer: await readFile(new URL('../../src/genplan.jpg', import.meta.url)),
+          }));
+          for (const type of ['input', 'change']) await guestOpens(() => page.locator('#drawingOpacity').evaluate((element, type) => {
+            element.value = '.2'; element.dispatchEvent(new Event(type, { bubbles: true }));
+          }, type));
+          if (touch) assert.ok((await page.evaluate(() => window.p13Pointers)).filter(e => e.type === 'touch' && e.trusted).length >= 2);
+          if (artifacts) {
+            await page.locator('#drawingOpacityGuest').scrollIntoViewIfNeeded();
+            await page.screenshot({ path: resolve(artifacts, `guest-controls-${width}x${height}.png`) });
+          }
+          if (width <= 1050) await activate(page.locator('#toggleDetails'));
           await activate(page.locator('#accountBtn'));
           assert.equal(await focus(), 'loginEmail');
           assert.equal(await dialog.evaluate(element => element.matches(':modal')), true);
@@ -244,7 +298,21 @@ test('P13/P14: account dialog UI regression with controlled API errors', { timeo
           await opacity.press('ArrowRight');
           assert.equal(await page.locator('.leaflet-genplan-pane img').evaluate(element => element.style.opacity), '0.05');
           if (!touch) {
-            // Exercise the existing local drawing tools after the account modal.
+            // This suite deliberately supplies a successful UI auth fixture.
+            // Real cookies/DB and the same controls are checked in account-api.
+            authorizeDrawingFixture = true;
+            await activate(page.locator('#accountBtn'));
+            await page.locator('#loginEmail').fill('p15-ui@example.test');
+            await page.locator('#loginPassword').fill('p15-ui-password');
+            await activate(page.locator('#accountLoginForm button[type="submit"]'));
+            await page.waitForFunction(() => document.documentElement.dataset.accountPhase === 'authenticated');
+            assert.equal(await page.locator('#imageFile').isDisabled(), false);
+            assert.equal(await page.locator('#drawingOpacity').isVisible(), true);
+            assert.equal(await page.locator('#drawingList .drawing-row').count(), 0);
+            await page.locator('#drawingOpacity').press('Home');
+            await page.locator('#drawingOpacity').press('ArrowRight');
+            assert.equal(await page.locator('.leaflet-drawings-pane').evaluate(element => element.style.opacity), '0.05');
+            await page.locator('#drawingOpacity').press('End');
             await page.locator('#imageFile').setInputFiles({
               name: 'p13-acceptance.jpg', mimeType: 'image/jpeg',
               buffer: await readFile(new URL('../../src/genplan.jpg', import.meta.url)),
@@ -289,8 +357,8 @@ test('P13/P14: account dialog UI regression with controlled API errors', { timeo
           await page.locator('#closeDrawer').click();
           assert.equal(await page.locator('#drawer').evaluate(element => element.classList.contains('open')), false);
           await unchanged('map regression');
-          assert.equal(authRequests.length, 9);
-          assert.equal(submitted.length, 8);
+          assert.equal(authRequests.length, touch ? 9 : 10);
+          assert.equal(submitted.length, touch ? 8 : 9);
           assert.deepEqual(pageErrors, []);
         } catch (error) {
           if (artifacts) {

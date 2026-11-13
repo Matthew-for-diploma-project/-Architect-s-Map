@@ -96,68 +96,41 @@
     "live_external_sources": "not verified"
   },
   "current_application": {
-    "iteration": 27,
-    "plan_step": "P14",
-    "updated_on": "2026-11-12",
+    "iteration": 28,
+    "plan_step": "P15",
+    "status": "completed",
+    "checkpoint": "P15-C05",
+    "updated_on": "2026-11-13",
     "date_timezone": "Europe/Moscow",
-    "base_commit_sha": "d1e9ffacc92fa56b00280f5a60657c600d890a75",
-    "branch": "iteration-027-p14-completion",
-    "tag": "iteration-027",
-    "tag_status": "local_only: git push lacks credentials and the GitHub connector cannot create remote tags; existing tags are not moved",
-    "commit_message": "fix: complete P14 logout error handling and acceptance",
-    "change": "Complete P14: show every failed logout, including an explicit 403, require me before another mutation, and repeat all Node/PostgreSQL/browser acceptance checks.",
+    "base_commit_sha": "a321ffc85ed12507a32c36dcf152996e44ab581b",
+    "branch": "iteration-028-p15-guest-controls",
+    "tag": "iteration-028",
+    "tag_status": "local tag after final commit; not published: GitHub plugin has no tag endpoint",
+    "commit_message": "docs(P15): record complete acceptance and close guest controls step",
+    "change": "P15 complete: always-visible personal controls open authentication for guests, work after verified login, guard direct events and cancel stale image decoding.",
     "application_source_modified": true,
     "sites_version_created": false,
     "source_integrity_scope": "Original iteration 13; original root metadata, manifest, documents and history remain unchanged.",
     "validation": {
-      "build": "passed; reproducible Worker SHA-256 8c828d6476711e9bc7a0c8b0927fa890c9e58d2014d5dc1e97c443d4d5992cdb",
+      "build": "passed; Worker reproduced byte-for-byte from P15-C02",
+      "worker_sha256": "ab1247b698a7f80df9a41c54657de5412d759bf2172c2c2f74462c735ac5427d",
       "ordinary_tests_passed": 115,
-      "account_state_unit_tests_passed": 10,
-      "tests_failed": 0,
       "database_integration_tests_passed": 69,
-      "database_integration_tests": "69 passed, 0 failed/skipped on a separate ordinary-role integration database in isolated PostgreSQL 17.11; browser database and role differ; backend and migrations unchanged",
-      "browser_dialog_checks_passed": 7,
-      "browser_api_checks_passed": 9,
-      "browser_tests_passed": 16,
-      "browser_scenarios_passed": 14,
-      "browser_qa": "passed: six UI viewports plus eight real PostgreSQL/fault scenarios; real logout Origin rejection on 1363/320px preserves cookie, exposes error/retry and recovers via me before a successful logout",
-      "browser_viewports": [
-        "1363x900 UI",
-        "320x850 UI/auth",
-        "375x850 UI/auth",
-        "390x850 UI",
-        "375x320 UI",
-        "320x240 UI",
-        "1363x850 auth"
-      ],
-      "browser_passed": [
-        "Startup me; unknown/error session disables personal file/tools/drag while map remains usable; retry distinguishes guest from service failure",
-        "Real registration/login/reload/logout, same-origin HttpOnly/SameSite cookie, wrong credentials and email conflict",
-        "Literal HTML-shaped name; real 80-emoji name and logout fit 320px without horizontal overflow",
-        "Exact Unicode/whitespace password payload; password cleared after request starts and no credential storage in URL/localStorage/sessionStorage",
-        "Duplicate requestSubmit during registration sends one request; modal close while waiting clears fields without duplicating the mutation",
-        "me 503, login network failure/429 with Retry-After, failed logout, and successful mutations with corrupt/lost responses recover via me",
-        "Original keyboard/focus/tab/Unicode/responsive UI and map/drawing regression on six viewports",
-        "Real Node Origin guard returns logout 403 on desktop/320px; visible error and focused me retry; unchanged cookie, no automatic POST retry, subsequent logout succeeds"
-      ],
-      "browser_test_isolation": "Different ordinary roles and separate browser/integration UTF8 _test databases on isolated PostgreSQL 17.11 at 127.0.0.1:55434; browser probe verifies identity; only owned UUID fixtures removed; QA-only browser auth limits 1000/1000",
-      "browser_response_fixtures": "UI suite controls me/401/409; API lifecycle and logout 403 use real Node/PostgreSQL; outgoing Origin alone is changed for 403, only other named outages are intercepted; pinned Leaflet JS/CSS local",
-      "pending_browser_checks": [],
-      "browser_blocker": null,
+      "browser_ui_tests_passed": 7,
+      "browser_account_api_tests_passed": 10,
+      "tests_failed": 0,
+      "tests_skipped": 0,
+      "runtime": "Node 24.22.1 / npm 11.9.0 / PostgreSQL 17.11 / Playwright 1.62.1 / Chromium Headless Shell 153.0.8010.0",
+      "browser_qa": "Guest click/tap/Enter/Space/range keys/direct events on six viewports; real register/login/reload/logout and personal gates on 1363/320/375; stale decode cancellation and object URL cleanup; previous P14 failure cases preserved.",
+      "integrity": "expected five changes from original iteration 13; historical metadata, artifacts and P16-P32 preserved",
       "plan_step_complete": true,
-      "out_of_scope_regression": "P31: existing collapsed-panel overflow at 1363px; no panel-layout fix in P14",
-      "limitations": "Physical phone/on-screen keyboard, HTTPS proxy and successful live NSPD response not separately tested. Low-window UI and real cookie sessions passed. Guest controls/persistence remain later plan steps.",
-      "next_action": "P14 completion is accepted in iteration 27. P15 has not started; continue only as a separate task after checking current remote main.",
-      "runtime": "Node 24.22.1 / npm 11.9.0 / PostgreSQL 17.11 / Chromium Headless Shell 156.0.8078.79 / Playwright 1.62.1"
+      "next_action": "Deliver accepted branch and PR; verify remote state separately. P16 not started."
     },
-    "previous_step_merge": {
-      "pull_request": 12,
-      "merge_commit_sha": "6236860ac91a206a53a8ca2fc5004e09d3733597"
-    },
-    "pull_request_status": "Continuation of merged P14 PR #13; final follow-up PR and main SHA are verified remotely after saving this commit.",
-    "previous_p14_merge": {
-      "pull_request": 13,
-      "merge_commit_sha": "d1e9ffacc92fa56b00280f5a60657c600d890a75"
+    "delivery": {
+      "branch_checkpoints": "GitHub Git API; each checkpoint fetched and verified",
+      "pull_request": "Create after final checkpoint and verify through GitHub",
+      "main_merge_performed": false,
+      "sites_published": false
     }
   }
 }

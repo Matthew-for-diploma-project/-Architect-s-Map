@@ -21,7 +21,15 @@ sidebar.innerHTML = `<div class="eyebrow">Рабочая область</div><h2
     </div>
   </section>
   <section class="layer"><strong>Мои карты и рисунки</strong><p>Добавьте PNG, JPEG или WebP. Перемещайте слой за маркер, растягивайте за угловые маркеры, меняйте поворот и прозрачность, затем зафиксируйте слой.</p>
-    <input id="imageFile" type="file" accept="image/png,image/jpeg,image/webp" multiple disabled><div id="drawingList"></div><p id="drawingMessage" role="status"></p>
+    <div class="personal-controls">
+      <button id="addDrawing" class="personal-button personal-locked" type="button" aria-describedby="personalAccess" aria-haspopup="dialog" aria-controls="accountDialog">Добавить рисунок</button>
+      <input id="imageFile" type="file" accept="image/png,image/jpeg,image/webp" multiple hidden disabled>
+      <div class="personal-opacity"><label for="drawingOpacity">Общая прозрачность личного слоя</label>
+        <button id="drawingOpacityGuest" class="personal-button personal-locked" type="button" aria-describedby="personalAccess" aria-haspopup="dialog" aria-controls="accountDialog"><span>100% · требуется вход</span><span class="personal-range-preview" aria-hidden="true"></span></button>
+        <input id="drawingOpacity" aria-describedby="personalAccess" type="range" min="0" max="1" step=".05" value="1" hidden disabled>
+      </div>
+      <p id="personalAccess" role="status">Проверяем состояние аккаунта. Личные действия временно недоступны.</p>
+    </div><div id="drawingList"></div><p id="drawingMessage" role="status"></p>
   </section>`;
 
 details.innerHTML = '<div id="inspector"><div class="eyebrow">Рабочая карта</div><h2>Карта Рязани</h2><p>Границы участков ЕГРН включены. Приблизьте карту и нажмите на участок — здесь появятся его кадастровые сведения.</p><div class="alert">Поиск сверху принимает адрес или кадастровый номер, например <b>62:29:0040006:531</b>.</div></div>';
@@ -457,15 +465,31 @@ map.on('click', identifyParcel);
 
 const drawings = [];
 const personalPendingMessage = 'Проверяем состояние аккаунта. Личные действия временно недоступны.';
-function personalActionsReady() {
+let drawingOpacity = 1;
+let personalGeneration = 0;
+function personalActionsReady({ open = false } = {}) {
   if (account.canUsePersonalActions()) return true;
-  $('drawingMessage').textContent = account.getState().phase === 'error'
-    ? 'Не удалось проверить аккаунт. Нажмите «Проверить вход» в шапке.' : personalPendingMessage;
+  const phase = account.getState().phase;
+  $('drawingMessage').textContent = phase === 'guest'
+    ? 'Войдите или зарегистрируйтесь, чтобы добавлять рисунки и менять личный слой.'
+    : phase === 'error' ? 'Не удалось проверить аккаунт. Нажмите «Проверить вход» в шапке.' : personalPendingMessage;
+  if (open && (phase === 'guest' || phase === 'error')) $('accountBtn').click();
   return false;
 }
-account.subscribe(() => {
+account.subscribe(state => {
   const blocked = !account.canUsePersonalActions();
-  for (const control of sidebar.querySelectorAll('#imageFile, .drawing-row input, .drawing-row button')) control.disabled = blocked;
+  if (blocked) personalGeneration++;
+  for (const control of sidebar.querySelectorAll('#imageFile, #drawingOpacity, .drawing-row input, .drawing-row button')) control.disabled = blocked;
+  $('drawingOpacity').hidden = blocked;
+  $('drawingOpacityGuest').hidden = !blocked;
+  $('drawingOpacityGuest').querySelector('span').textContent = `${Math.round(drawingOpacity * 100)}% · ${state.phase === 'guest' ? 'требуется вход' : state.phase === 'error' ? 'проверьте вход' : 'проверка аккаунта'}`;
+  $('addDrawing').classList.toggle('personal-locked', blocked);
+  if (blocked) $('addDrawing').setAttribute('aria-haspopup', 'dialog');
+  else $('addDrawing').removeAttribute('aria-haspopup');
+  $('personalAccess').textContent = blocked
+    ? state.phase === 'guest' ? 'Войдите или зарегистрируйтесь. Нажмите на добавление или общую прозрачность, чтобы открыть окно аккаунта.'
+      : state.phase === 'error' ? 'Не удалось проверить аккаунт. Нажмите на контрол, чтобы проверить вход.' : personalPendingMessage
+    : 'Рисунки и настройки хранятся в этой вкладке до перезагрузки.';
   for (const drawing of drawings) drawing.handles.eachLayer(marker => {
     if (blocked) marker.dragging?.disable();
     else if (!drawing.locked) marker.dragging?.enable();
@@ -474,6 +498,25 @@ account.subscribe(() => {
   else if ($('drawingMessage').dataset.accountBlocked === 'true') $('drawingMessage').textContent = '';
   $('drawingMessage').dataset.accountBlocked = String(blocked);
 });
+$('addDrawing').addEventListener('click', () => {
+  if (personalActionsReady({ open: true })) $('imageFile').click();
+});
+$('imageFile').addEventListener('click', event => {
+  if (!personalActionsReady({ open: true })) event.preventDefault();
+});
+$('drawingOpacityGuest').addEventListener('click', () => personalActionsReady({ open: true }));
+$('drawingOpacityGuest').addEventListener('keydown', event => {
+  if (!['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End', 'PageUp', 'PageDown'].includes(event.key)) return;
+  event.preventDefault();
+  personalActionsReady({ open: true });
+});
+function changeDrawingOpacity() {
+  if (!personalActionsReady({ open: true })) { $('drawingOpacity').value = String(drawingOpacity); return; }
+  drawingOpacity = Number($('drawingOpacity').value);
+  map.getPane('drawings').style.opacity = String(drawingOpacity);
+}
+$('drawingOpacity').addEventListener('input', changeDrawingOpacity);
+$('drawingOpacity').addEventListener('change', changeDrawingOpacity);
 const opposite = { northWest: 'southEast', northEast: 'southWest', southEast: 'northWest', southWest: 'northEast' };
 const corners = ['northWest', 'northEast', 'southEast', 'southWest'];
 const cornerPoint = { northWest: b => b.getNorthWest(), northEast: b => b.getNorthEast(), southEast: b => b.getSouthEast(), southWest: b => b.getSouthWest() };
@@ -513,13 +556,14 @@ function rebuildHandles(d) {
   move.on('dragend', () => rebuildHandles(d));
 }
 
-function addDrawing(file) {
+function addDrawing(file, generation) {
   return new Promise((resolve, reject) => {
+    if (!personalActionsReady() || generation !== personalGeneration) return reject(new Error('Добавление отменено: состояние аккаунта изменилось.'));
     if (!['image/png', 'image/jpeg', 'image/webp'].includes(file.type) || file.size > 20 * 1024 * 1024) return reject(new Error('Нужен PNG/JPEG/WebP до 20 МБ'));
     const url = URL.createObjectURL(file);
     const image = new Image();
     image.onload = () => {
-      if (!personalActionsReady()) { URL.revokeObjectURL(url); reject(new Error(personalPendingMessage)); return; }
+      if (!personalActionsReady() || generation !== personalGeneration) { URL.revokeObjectURL(url); reject(new Error('Добавление отменено: состояние аккаунта изменилось.')); return; }
       const center = map.latLngToLayerPoint(map.getCenter());
       const width = Math.min(map.getSize().x * .55, 600);
       const height = width * image.height / image.width;
@@ -549,9 +593,10 @@ function addDrawingRow(d) {
 }
 
 $('imageFile').addEventListener('change', async e => {
-  if (!personalActionsReady()) { e.target.value = ''; return; }
-  for (const file of e.target.files) {
-    try { const d = await addDrawing(file); addDrawingRow(d); $('drawingMessage').textContent = 'Слой добавлен: переместите, растяните или поверните его, затем зафиксируйте.'; }
+  if (!personalActionsReady({ open: true })) { e.target.value = ''; return; }
+  const generation = personalGeneration;
+  for (const file of [...e.target.files]) {
+    try { const d = await addDrawing(file, generation); addDrawingRow(d); $('drawingMessage').textContent = 'Слой добавлен: переместите, растяните или поверните его, затем зафиксируйте.'; }
     catch (error) { $('drawingMessage').textContent = error.message; }
   }
   e.target.value = '';
