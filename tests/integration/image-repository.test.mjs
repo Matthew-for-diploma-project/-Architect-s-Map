@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
+import { setTimeout as delay } from 'node:timers/promises';
 import { Pool } from 'pg';
 import { createDatabase } from '../../src/backend/database.mjs';
 import { readDatabaseConfig } from '../../src/backend/database-config.mjs';
@@ -21,7 +22,7 @@ async function isolated(work) {
   let pool;
   try {
     await database.pool.query(`CREATE SCHEMA "${schema}"`);
-    pool = new Pool({ ...config, options: `-c search_path=${schema},pg_catalog` });
+    pool = new Pool({ ...config, max: 4, application_name: schema, options: `-c search_path=${schema},pg_catalog` });
     pool.on('error', () => {});
     await applyMigrations(pool);
     const sessions = createSessionService({ database: { pool }, config: readAuthConfig({ PUBLIC_ORIGIN: 'https://map.example.test' }) });
@@ -36,7 +37,7 @@ async function isolated(work) {
     const repository = createImageRepository({ database: { pool: {
       query(...args) { queryCount++; return pool.query(...args); }, connect: pool.connect.bind(pool),
     } } });
-    await work({ pool, repository, a: identities[0], b: identities[1], sessions, queryCount: () => queryCount });
+    await work({ pool, schema, repository, a: identities[0], b: identities[1], sessions, queryCount: () => queryCount });
   } finally {
     await pool?.end();
     await database.pool.query(`DROP SCHEMA IF EXISTS "${schema}" CASCADE`);
@@ -114,5 +115,137 @@ test('P17 real PostgreSQL query failures return a fixed 503 without SQL or owner
       assert.doesNotMatch(error.stack + JSON.stringify(error), /image_metadata|p17_test_|SELECT|postgresql|password_hash/);
       assert.ok(!JSON.stringify(error).includes(a.user.id)); return true;
     });
+  });
+});
+
+test('P17 creates atomic bytes/metadata for the session owner and refuses supplied ownership or IDs', async () => {
+  await isolated(async ({ pool, repository, a, b }) => {
+    const name = "literal'); DELETE FROM users; --.png";
+    const { angle, opacity, locked, ...minimal } = imageData;
+    const image = await repository.create(a, { ...minimal, name });
+    assert.deepEqual([image.name, image.angle, image.opacity, image.locked, image.revision], [name, 0, .65, false, 1]);
+    assert.deepEqual(image.bounds, imageData.bounds);
+    const raw = (await pool.query('SELECT user_id,file_data FROM images WHERE id=$1', [image.id])).rows[0];
+    assert.equal(raw.user_id, a.user.id); assert.deepEqual(raw.file_data, png);
+    for (const fields of [{ userId: b.user.id }, { user_id: b.user.id }, { id: randomUUID() }]) {
+      await assert.rejects(repository.create(a, { ...imageData, ...fields }), { code: 'VALIDATION_ERROR', status: 400 });
+    }
+    assert.equal((await repository.list(b)).images.length, 0);
+    assert.equal((await pool.query('SELECT count(*)::int AS n FROM images')).rows[0].n, 1);
+    assert.equal((await pool.query('SELECT count(*)::int AS n FROM users')).rows[0].n, 2);
+  });
+});
+
+test('P17 foreign/missing mutations share 404 for any revision and guests never reach SQL', async () => {
+  await isolated(async ({ pool, repository, a, b, queryCount }) => {
+    const id = await seed(pool, a.user.id);
+    const saved = (await pool.query('SELECT * FROM images WHERE id=$1', [id])).rows[0];
+    const before = queryCount();
+    for (const action of [() => repository.create(null, imageData), () => repository.update(null, id, { revision: 1, opacity: 0 }), () => repository.remove(null, id)]) {
+      await assert.rejects(action(), { code: 'AUTH_REQUIRED', status: 401 });
+    }
+    assert.equal(queryCount(), before);
+    for (const otherId of [id, randomUUID()]) {
+      for (const revision of [1, 999]) await assert.rejects(repository.update(b, otherId, { revision, opacity: 0 }), { code: 'NOT_FOUND', status: 404 });
+      await assert.rejects(repository.remove(b, otherId), { code: 'NOT_FOUND', status: 404 });
+    }
+    for (const extra of [{ userId: b.user.id }, { user_id: b.user.id }, { fileData: Buffer.from('changed') }, { 'opacity = 0 WHERE true; --': 0 }]) {
+      await assert.rejects(repository.update(a, id, { revision: 1, opacity: .1, ...extra }), { code: 'VALIDATION_ERROR', status: 400 });
+    }
+    assert.deepEqual((await pool.query('SELECT * FROM images WHERE id=$1', [id])).rows[0], saved);
+  });
+});
+
+test('P17 own edits preserve owner/bytes, compare revisions and delete without revealing missing records', async () => {
+  await isolated(async ({ pool, repository, a }) => {
+    const image = await repository.create(a, imageData);
+    const bounds = [[-85, -180], [85, 180]];
+    const edited = await repository.update(a, image.id, { revision: 1, bounds, angle: -180, opacity: 0, locked: true });
+    assert.deepEqual([edited.bounds, edited.angle, edited.opacity, edited.locked, edited.revision], [bounds, -180, 0, true, 2]);
+    assert.equal(edited.createdAt, image.createdAt); assert.ok(edited.updatedAt >= image.updatedAt);
+    const raw = (await pool.query('SELECT user_id,file_data FROM images WHERE id=$1', [image.id])).rows[0];
+    assert.equal(raw.user_id, a.user.id); assert.deepEqual(raw.file_data, png);
+    await assert.rejects(repository.update(a, image.id, { revision: 1, opacity: 1 }), { code: 'REVISION_CONFLICT', status: 409 });
+    assert.deepEqual(await repository.get(a, image.id), edited);
+    const third = await repository.update(a, image.id, { revision: 2, angle: 0, opacity: 1, locked: false });
+    assert.deepEqual([third.angle, third.opacity, third.locked, third.revision], [0, 1, false, 3]);
+    assert.equal(await repository.remove(a, image.id), undefined);
+    assert.equal((await repository.list(a)).images.length, 0);
+    for (const method of ['get', 'getFile', 'remove']) await assert.rejects(repository[method](a, image.id), { code: 'NOT_FOUND', status: 404 });
+    await assert.rejects(repository.update(a, image.id, { revision: 3, opacity: .5 }), { code: 'NOT_FOUND', status: 404 });
+  });
+});
+
+test('P17 overlapping updates at one revision have one winner and cannot overwrite the newer value', async () => {
+  await isolated(async ({ pool, schema, repository, a, b }) => {
+    const image = await repository.create(a, imageData), foreign = await repository.create(b, imageData);
+    const blocker = await pool.connect();
+    let pending;
+    try {
+      await blocker.query('BEGIN');
+      await blocker.query('SELECT id FROM images WHERE id=$1 FOR UPDATE', [image.id]);
+      pending = Promise.allSettled([11, 22].map(angle => repository.update(a, image.id, { revision: 1, angle })));
+      // Both real UPDATE statements must be waiting on the row, not merely two
+      // sequential calls. This observer uses the same ordinary PostgreSQL role.
+      let waiting = 0;
+      for (let i = 0; i < 200 && waiting < 2; i++) {
+        waiting = (await pool.query(`SELECT count(*)::int AS n FROM pg_stat_activity
+          WHERE application_name=$1 AND wait_event_type='Lock' AND query LIKE 'UPDATE images AS i SET%'`, [schema])).rows[0].n;
+        if (waiting < 2) await delay(10);
+      }
+      assert.equal(waiting, 2, 'both writers are blocked concurrently');
+    } finally { await blocker.query('ROLLBACK'); blocker.release(); }
+    const results = await pending;
+    const winners = results.filter(r => r.status === 'fulfilled'), failures = results.filter(r => r.status === 'rejected');
+    assert.equal(winners.length, 1); assert.equal(failures.length, 1);
+    assert.equal(failures[0].reason.code, 'REVISION_CONFLICT');
+    const saved = await repository.get(a, image.id);
+    assert.deepEqual(saved, winners[0].value); assert.equal(saved.revision, 2);
+    assert.equal((await repository.get(b, foreign.id)).revision, 1);
+    assert.equal((await pool.query('SELECT count(*)::int AS n FROM images')).rows[0].n, 2);
+  });
+});
+
+test('P17 supplied transaction clients keep create/update/delete atomic and caller controlled', async () => {
+  await isolated(async ({ pool, repository, a }) => {
+    const existing = await repository.create(a, imageData), removable = await repository.create(a, imageData);
+    const client = await pool.connect();
+    let rolledBackId;
+    try {
+      await client.query('BEGIN');
+      const created = await repository.create(a, imageData, { client }); rolledBackId = created.id;
+      await repository.update(a, existing.id, { revision: 1, angle: 45 }, { client });
+      await repository.remove(a, removable.id, { client });
+      assert.equal((await repository.get(a, existing.id, { client })).angle, 45);
+      assert.equal((await repository.get(a, existing.id)).angle, 0);
+      await assert.rejects(repository.get(a, created.id), { code: 'NOT_FOUND' });
+      await client.query('ROLLBACK');
+      assert.equal((await repository.get(a, existing.id)).revision, 1);
+      assert.equal((await repository.get(a, removable.id)).id, removable.id);
+      await assert.rejects(repository.get(a, rolledBackId), { code: 'NOT_FOUND' });
+      await client.query('BEGIN');
+      const committed = await repository.create(a, imageData, { client });
+      await repository.update(a, committed.id, { revision: 1, locked: true }, { client });
+      await client.query('COMMIT');
+      assert.equal((await repository.get(a, committed.id)).locked, true);
+    } finally { await client.query('ROLLBACK'); client.release(); }
+  });
+});
+
+test('P17 real write failures stay sanitized and leave bytes/metadata unchanged', async () => {
+  await isolated(async ({ pool, repository, a }) => {
+    const image = await repository.create(a, imageData);
+    const before = (await pool.query('SELECT * FROM images WHERE id=$1', [image.id])).rows[0];
+    await pool.query("CREATE FUNCTION p17_fail() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'P17_SQL_SECRET'; END; $$");
+    await pool.query('CREATE TRIGGER p17_fail BEFORE INSERT OR UPDATE OR DELETE ON images FOR EACH ROW EXECUTE FUNCTION p17_fail()');
+    for (const action of [() => repository.create(a, imageData), () => repository.update(a, image.id, { revision: 1, opacity: 0 }), () => repository.remove(a, image.id)]) {
+      await assert.rejects(action(), error => {
+        assert.equal(error.code, 'DATABASE_UNAVAILABLE'); assert.equal(error.status, 503);
+        assert.doesNotMatch(error.stack + JSON.stringify(error), /P17_SQL_SECRET|p17_fail|INSERT|UPDATE|DELETE|postgresql/);
+        return true;
+      });
+    }
+    assert.deepEqual((await pool.query('SELECT * FROM images WHERE id=$1', [image.id])).rows[0], before);
+    assert.equal((await pool.query('SELECT count(*)::int AS n FROM images')).rows[0].n, 1);
   });
 });

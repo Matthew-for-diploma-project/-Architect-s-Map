@@ -51,8 +51,38 @@ function found(row) {
   if (!row) throw new ApiError('NOT_FOUND');
   return row;
 }
+function boundsValues(value) {
+  if (!Array.isArray(value) || value.length !== 2 || value.some(pair => !Array.isArray(pair) || pair.length !== 2)) {
+    throw new ApiError('VALIDATION_ERROR');
+  }
+  const values = [value[0]?.[0], value[0]?.[1], value[1]?.[0], value[1]?.[1]];
+  if (!values.every(Number.isFinite)) throw new ApiError('VALIDATION_ERROR');
+  return values;
+}
+function createValues(data) {
+  record(data, ['name', 'mimeType', 'fileData', 'width', 'height', 'bounds', 'angle', 'opacity', 'locked']);
+  const { name, mimeType, fileData, width, height, angle = 0, opacity = .65, locked = false } = data;
+  // These are internal, already validated image fields, not a multipart decoder.
+  // P18 adds full content/range validation before future HTTP handlers call us.
+  if (typeof name !== 'string' || typeof mimeType !== 'string' || !Buffer.isBuffer(fileData)
+      || !Number.isInteger(width) || !Number.isInteger(height) || !Number.isInteger(angle)
+      || !Number.isFinite(opacity) || typeof locked !== 'boolean') throw new ApiError('VALIDATION_ERROR');
+  return [name, mimeType, fileData, width, height, ...boundsValues(data.bounds), angle, opacity, locked];
+}
+function updateValues(changes) {
+  record(changes, ['revision', 'bounds', 'angle', 'opacity', 'locked']);
+  if (!Number.isInteger(changes.revision) || changes.revision < 1 || changes.revision > 2147483647
+      || !['bounds', 'angle', 'opacity', 'locked'].some(key => Object.hasOwn(changes, key))
+      || (Object.hasOwn(changes, 'angle') && !Number.isInteger(changes.angle))
+      || (Object.hasOwn(changes, 'opacity') && !Number.isFinite(changes.opacity))
+      || (Object.hasOwn(changes, 'locked') && typeof changes.locked !== 'boolean')) throw new ApiError('VALIDATION_ERROR');
+  return [changes.revision, ...(Object.hasOwn(changes, 'bounds') ? boundsValues(changes.bounds) : [null, null, null, null]),
+    changes.angle ?? null, changes.opacity ?? null, changes.locked ?? null];
+}
 
 export function createImageRepository({ database }) {
+  // Passing a client composes these operations into a caller-owned transaction.
+  // This repository never begins, commits, retries or releases that transaction.
   return {
     async get(auth, id, { client = database.pool } = {}) {
       const userId = ownerId(auth);
@@ -78,6 +108,42 @@ export function createImageRepository({ database }) {
       const last = images.at(-1);
       // Internal typed boundary; P20 will validate/encode the opaque HTTP cursor.
       return { images, next: rows.length > limit ? { createdAt: last.createdAt, id: last.id } : null };
+    },
+    async create(auth, data, { client = database.pool } = {}) {
+      const userId = ownerId(auth);
+      const values = [userId, ...createValues(data)];
+      const { rows: [row] } = await databaseQuery(client, `INSERT INTO images AS i
+        (user_id, name, mime_type, file_data, width, height, south, west, north, east, angle, opacity, locked)
+        VALUES ($1::uuid, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+        RETURNING ${metadataColumns}`, values);
+      return toImage(found(row));
+    },
+    async update(auth, id, changes, { client = database.pool } = {}) {
+      const userId = ownerId(auth);
+      const values = [userId, imageId(id), ...updateValues(changes)];
+      // Compare-and-swap in one UPDATE: concurrent writers cannot overwrite a
+      // newer revision. Fixed columns only; never interpolate request keys.
+      const { rows: [row] } = await databaseQuery(client, `UPDATE images AS i SET
+        south = COALESCE($4::double precision, i.south), west = COALESCE($5::double precision, i.west),
+        north = COALESCE($6::double precision, i.north), east = COALESCE($7::double precision, i.east),
+        angle = COALESCE($8::smallint, i.angle), opacity = COALESCE($9::double precision, i.opacity),
+        locked = COALESCE($10::boolean, i.locked), revision = i.revision + 1,
+        updated_at = GREATEST(clock_timestamp(), i.updated_at)
+        WHERE i.user_id = $1::uuid AND i.id = $2::uuid AND i.revision = $3::integer
+        RETURNING ${metadataColumns}`, values);
+      if (row) return toImage(row);
+      // Only probe the same owner's row. A foreign UUID never reveals existence
+      // or revision. A concurrent deletion may correctly turn a conflict into 404.
+      const existing = await databaseQuery(client, `SELECT i.id FROM images AS i
+        WHERE i.user_id = $1::uuid AND i.id = $2::uuid`, [userId, values[1]]);
+      found(existing.rows[0]);
+      throw new ApiError('REVISION_CONFLICT');
+    },
+    async remove(auth, id, { client = database.pool } = {}) {
+      const userId = ownerId(auth);
+      const { rows: [row] } = await databaseQuery(client, `DELETE FROM images AS i
+        WHERE i.user_id = $1::uuid AND i.id = $2::uuid RETURNING i.id`, [userId, imageId(id)]);
+      found(row);
     },
   };
 }
