@@ -32,6 +32,7 @@ async function isolated(work, { queryHook } = {}) {
     for (const name of ['A', 'B']) {
       const { rows: [user] } = await pool.query('INSERT INTO users(email,name,password_hash) VALUES($1,$2,$3) RETURNING id',
         [randomUUID() + '@example.test', name, 'P19_TEST_ONLY_NOT_A_LOGIN_HASH']);
+      await pool.query('INSERT INTO layer_settings(user_id) VALUES($1)', [user.id]);
       const session = await sessions.issue(user.id); accounts.push({ user, session, cookie: session.cookie.split(';')[0] });
     }
     const writes = [], releases = [], adapterErrors = [];
@@ -76,7 +77,7 @@ async function headersOnly(url, headers) {
       response.on('end', () => resolve({ status: response.statusCode, headers: response.headers, body: JSON.parse(Buffer.concat(chunks)) }));
       response.on('error', reject);
     });
-    request.on('error', reject); request.flushHeaders();
+    request.on('error', reject); request.setTimeout(5000, () => request.destroy(new Error('Early response timed out'))); request.flushHeaders();
   });
 }
 
@@ -145,4 +146,97 @@ test('P19 invalid files/metadata, owner substitution and multipart violations cr
     }
     assert.equal(await count(), 0); assert.equal(connections(), 0);
   });
+});
+
+test('P19 an actual AFTER INSERT database failure rolls back bytes and metadata and returns safe 503', async () => {
+  await isolated(async ({ pool, post, a, count, writes, releases }) => {
+    await pool.query("CREATE FUNCTION p19_fail() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'P19_SQL_SECRET'; END; $$");
+    await pool.query('CREATE TRIGGER p19_fail AFTER INSERT ON images FOR EACH ROW EXECUTE FUNCTION p19_fail()');
+    await error(await post(a), 503, 'DATABASE_UNAVAILABLE');
+    assert.equal(await count(), 0);
+    assert.equal(writes.filter(sql => sql.includes('INSERT INTO images')).length, 1);
+    assert.equal(writes.at(-1), 'ROLLBACK'); assert.ok(!writes.includes('COMMIT'));
+    assert.deepEqual(releases, [false]);
+  });
+});
+
+test('P19 failed files do not undo earlier uploads or alter another account or its layer settings', async () => {
+  await isolated(async ({ pool, post, a, b, count }) => {
+    const settings = (await pool.query('SELECT * FROM layer_settings ORDER BY user_id')).rows;
+    await pool.query("CREATE FUNCTION p19_reject_name() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.name='reject.png' THEN RAISE EXCEPTION 'P19_SQL_SECRET'; END IF; RETURN NEW; END; $$");
+    await pool.query('CREATE TRIGGER p19_reject_name AFTER INSERT ON images FOR EACH ROW EXECUTE FUNCTION p19_reject_name()');
+    const first = await post(a, { name: 'same.png' }); assert.equal(first.status, 201);
+    const one = (await first.json()).image;
+    await error(await post(a, { bytes: images.jpeg }), 415, 'UNSUPPORTED_MEDIA_TYPE');
+    await error(await post(a, { name: 'reject.png' }), 503, 'DATABASE_UNAVAILABLE');
+    assert.equal(await count(), 1);
+    const second = await post(b, { name: 'same.png' }), third = await post(a, { name: 'same.png' });
+    assert.equal(second.status, 201); assert.equal(third.status, 201);
+    const two = (await second.json()).image, three = (await third.json()).image;
+    assert.equal(new Set([one.id, two.id, three.id]).size, 3); assert.equal(await count(), 3);
+    const rows = (await pool.query('SELECT id,user_id,file_data FROM images ORDER BY id')).rows;
+    for (const row of rows) { assert.deepEqual(row.file_data, images.png); assert.equal(row.user_id, row.id === two.id ? b.user.id : a.user.id); }
+    assert.deepEqual((await pool.query('SELECT * FROM layer_settings ORDER BY user_id')).rows, settings);
+  });
+});
+
+test('P19 overlapping file requests use independent transactions and distinct server IDs', async () => {
+  let signalEntered, release;
+  const entered = new Promise(resolve => { signalEntered = resolve; });
+  const gate = new Promise(resolve => { release = resolve; });
+  let inserts = 0;
+  await isolated(async ({ post, a, b, pool, count }) => {
+    let settled = false;
+    const pending = Promise.all([post(a, { name: 'same.bin' }), post(b, { name: 'same.bin', bytes: images.jpeg, mimeType: 'image/jpeg' })])
+      .then(responses => { settled = true; return responses; });
+    try {
+      await new Promise((resolve, reject) => {
+        const timer = setTimeout(() => reject(new Error('Both INSERT statements must complete before COMMIT')), 5000);
+        entered.then(() => { clearTimeout(timer); resolve(); });
+      });
+      assert.equal(inserts, 2); assert.equal(settled, false);
+      assert.equal(await count(), 0, 'uncommitted images are not visible on another connection');
+    } finally { release(); }
+    const responses = await pending; assert.ok(responses.every(response => response.status === 201));
+    const [first, second] = await Promise.all(responses.map(response => response.json()));
+    assert.notEqual(first.image.id, second.image.id); assert.equal(await count(), 2);
+    for (const [account, image, bytes] of [[a, first.image, images.png], [b, second.image, images.jpeg]]) {
+      const row = (await pool.query('SELECT user_id,file_data FROM images WHERE id=$1', [image.id])).rows[0];
+      assert.equal(row.user_id, account.user.id); assert.deepEqual(row.file_data, bytes);
+    }
+  }, { queryHook: async (client, sql, values) => {
+    const result = await client.query(sql, values);
+    if (sql.includes('INSERT INTO images')) { if (++inserts === 2) signalEntered(); await gate; }
+    return result;
+  } });
+});
+
+test('P19 a post-INSERT response construction failure rolls back the real row', async () => {
+  await isolated(async ({ post, a, count, writes, releases }) => {
+    await error(await post(a), 500, 'INTERNAL_ERROR');
+    assert.equal(await count(), 0); assert.equal(writes.at(-1), 'ROLLBACK');
+    assert.ok(!writes.includes('COMMIT')); assert.deepEqual(releases, [false]);
+  }, { queryHook: async (client, sql, values) => {
+    const result = await client.query(sql, values);
+    if (sql.includes('INSERT INTO images')) result.rows[0].angle = 1n; // Simulate serialization failure after a real INSERT.
+    return result;
+  } });
+});
+
+test('P19 losing COMMIT acknowledgement reports 503 without blindly inserting a second copy', async () => {
+  await isolated(async ({ pool, post, a, count, writes, releases }) => {
+    await error(await post(a, { name: 'uncertain.png' }), 503, 'DATABASE_UNAVAILABLE');
+    // COMMIT really executed before the simulated lost reply. The outcome must
+    // not be advertised as success or automatically retried as another POST.
+    assert.equal(await count(), 1);
+    const row = (await pool.query('SELECT user_id,name,file_data FROM images')).rows[0];
+    assert.equal(row.user_id, a.user.id); assert.equal(row.name, 'uncertain.png'); assert.deepEqual(row.file_data, images.png);
+    assert.equal(writes.filter(sql => sql.includes('INSERT INTO images')).length, 1);
+    assert.equal(writes.filter(sql => sql === 'COMMIT').length, 1);
+    assert.ok(!writes.includes('ROLLBACK')); assert.deepEqual(releases, [true]);
+  }, { queryHook: async (client, sql, values) => {
+    const result = await client.query(sql, values);
+    if (sql === 'COMMIT') throw new Error('P19_COMMIT_REPLY_SECRET');
+    return result;
+  } });
 });

@@ -45,7 +45,7 @@ test('P19 upload rejects guests and invalid trusted identity before obtaining a 
   assert.deepEqual(f.operations, []);
 });
 
-test('P19 upload binds the session owner and exact bytes, and returns safe 201 only after COMMIT', async () => {
+test('P19 upload binds the session owner and exact bytes, and returns safe 201 only after COMMIT', { timeout: 5000 }, async () => {
   let reached, release;
   const entered = new Promise(resolve => { reached = resolve; });
   const gate = new Promise(resolve => { release = resolve; });
