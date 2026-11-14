@@ -1,6 +1,8 @@
 // This module and its dependencies run only in Node, outside the Worker build.
 import { ApiError, apiErrorResponse, privateResponse } from './http-errors.mjs';
 import { readBoundedBody, readJsonBody } from './request-body.mjs';
+import { readImageUpload } from './image-validation.mjs';
+import { validateImagePatch } from './image-metadata.mjs';
 
 const namespaces = ['/api/auth', '/api/images', '/api/layer-settings'];
 const routes = [
@@ -23,7 +25,7 @@ const routes = [
 // null means the request still belongs to the original Worker. Nothing is read.
 // Production passes its Origin/session guard; it runs before any body or ID.
 // Implemented handlers receive a bounded, decoded body; field/file validation is
-// their responsibility. Multipart decoding and image validation belong to P18.
+// their responsibility. P18 validates multipart/images before image handlers.
 export function createNodeApiHandler({ database, handlers = {}, beforeHandle } = {}) {
   return async function handleNodeApi(incoming, { signal } = {}) {
     const url = new URL(incoming.url || '/', 'http://localhost');
@@ -58,11 +60,11 @@ export function createNodeApiHandler({ database, handlers = {}, beforeHandle } =
       const handler = Object.hasOwn(handlers, action) ? handlers[action] : undefined;
       // Authorized requests still reject before uploads until handlers exist.
       if (route.private && typeof handler !== 'function') throw new ApiError('NOT_IMPLEMENTED');
-      if (bodyType === 'json') context.body = await readJsonBody(incoming, bodyLimit);
-      else {
-        if (bodyType === 'multipart' && !/^multipart\/form-data\s*;/i.test(incoming.headers['content-type'] || '')) {
-          throw new ApiError('UNSUPPORTED_MEDIA_TYPE');
-        }
+      if (bodyType === 'multipart') context.body = await readImageUpload(incoming);
+      else if (bodyType === 'json') {
+        context.body = await readJsonBody(incoming, bodyLimit);
+        if (action === 'images.update') context.body = validateImagePatch(context.body);
+      } else {
         const bytes = await readBoundedBody(incoming, bodyLimit);
         if (bodyType !== 'none') context.body = bytes;
       }

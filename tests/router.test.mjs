@@ -4,6 +4,7 @@ import { Readable } from 'node:stream';
 import { createNodeApiHandler } from '../src/backend/router.mjs';
 import { ApiError, apiErrorResponse } from '../src/backend/http-errors.mjs';
 import { readBoundedBody } from '../src/backend/request-body.mjs';
+import { images, metadata, multipart, multipartType } from './fixtures/image-files.mjs';
 
 function request(method, url, chunks = [], headers = {}) {
   const incoming = Readable.from(chunks, { objectMode: false });
@@ -29,9 +30,9 @@ test('all eleven method/path contracts reach their handler with private response
     ['POST', '/api/auth/login', 'auth.login', '{}', jsonHeaders],
     ['GET', '/api/auth/me', 'auth.me'], ['POST', '/api/auth/logout', 'auth.logout'],
     ['GET', '/api/images', 'images.list'],
-    ['POST', '/api/images', 'images.create', 'binary', { 'content-type': 'multipart/form-data; boundary=example' }],
+    ['POST', '/api/images', 'images.create', multipart(), { 'content-type': multipartType }],
     ['GET', '/api/images/123/file', 'images.file'],
-    ['PATCH', '/api/images/123', 'images.update', '{}', jsonHeaders],
+    ['PATCH', '/api/images/123', 'images.update', '{"revision":1,"opacity":0.5}', jsonHeaders],
     ['DELETE', '/api/images/123', 'images.delete'],
     ['GET', '/api/layer-settings', 'layerSettings.get'],
     ['PATCH', '/api/layer-settings', 'layerSettings.update', '{}', jsonHeaders],
@@ -48,8 +49,11 @@ test('all eleven method/path contracts reach their handler with private response
       assert.equal(context.signal, signal);
       assert.equal(context.headers.get('x-test'), 'present');
       if (path.includes('123')) assert.equal(context.params.id, '123');
-      if (headers === jsonHeaders) assert.deepEqual(context.body, {});
-      if (action === 'images.create') assert.equal(context.body.toString(), body);
+      if (headers === jsonHeaders) assert.deepEqual(context.body, action === 'images.update' ? { revision: 1, opacity: .5 } : {});
+      if (action === 'images.create') {
+        assert.deepEqual(context.body.fileData, images.png); assert.deepEqual(context.body.bounds, metadata.bounds);
+        assert.deepEqual([context.body.width, context.body.height], [3, 2]);
+      }
       return Response.json({ action }, { headers: { 'Cache-Control': 'public, max-age=300' } });
     } } });
     const response = await handle(request(method, path + '?limit=10', body ? [body] : [], { ...headers, 'x-test': 'present' }), { signal });
@@ -157,7 +161,7 @@ test('account JSON limit is inclusive and counts UTF-8 bytes with or without Con
   assert.equal(advertised.readableFlowing, null);
 });
 
-test('PATCH limits are 8 KiB and multipart total limit is 21 MiB before handler decoding', async () => {
+test('PATCH limits are 8 KiB and validated multipart total limit is 21 MiB before the handler', async () => {
   let calls = 0;
   const accept = () => { calls++; return new Response(null, { status: 204 }); };
   const handle = createNodeApiHandler({ beforeHandle: testIdentity, handlers: {
@@ -165,13 +169,15 @@ test('PATCH limits are 8 KiB and multipart total limit is 21 MiB before handler 
   } });
   const exactJson = '{"x":"' + 'a'.repeat(8192 - 8) + '"}';
   for (const path of ['/api/images/id', '/api/layer-settings']) {
-    assert.equal((await handle(request('PATCH', path, [exactJson], jsonHeaders))).status, 204);
-    await errorCode(await handle(request('PATCH', path, [exactJson, ' '], jsonHeaders)), 413, 'PAYLOAD_TOO_LARGE');
+    const json = path.startsWith('/api/images/') ? '{"revision":1,"opacity":0.5}' : exactJson;
+    const padded = json + ' '.repeat(8192 - Buffer.byteLength(json));
+    assert.equal((await handle(request('PATCH', path, [padded], jsonHeaders))).status, 204);
+    await errorCode(await handle(request('PATCH', path, [padded, ' '], jsonHeaders)), 413, 'PAYLOAD_TOO_LARGE');
   }
-  const headers = { 'content-type': 'multipart/form-data; boundary=example' };
-  const chunk = Buffer.alloc(1024 * 1024);
-  assert.equal((await handle(request('POST', '/api/images', Array(21).fill(chunk), headers))).status, 204);
-  await errorCode(await handle(request('POST', '/api/images', [...Array(21).fill(chunk), Buffer.from('x')], headers)), 413, 'PAYLOAD_TOO_LARGE');
+  const headers = { 'content-type': multipartType };
+  const body = multipart(), preamble = Buffer.alloc(21 * 1024 * 1024 - body.length, 'a'); preamble.write('\r\n', preamble.length - 2);
+  assert.equal((await handle(request('POST', '/api/images', [preamble, body], headers))).status, 204);
+  await errorCode(await handle(request('POST', '/api/images', [preamble, body, Buffer.from('x')], headers)), 413, 'PAYLOAD_TOO_LARGE');
   await errorCode(await handle(request('POST', '/api/images', ['{}'], jsonHeaders)), 415, 'UNSUPPORTED_MEDIA_TYPE');
   assert.equal(calls, 3);
 });

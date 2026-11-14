@@ -50,3 +50,9 @@ export function validateImageMimeType(value) {
   if (!['image/png', 'image/jpeg', 'image/webp'].includes(type)) throw new ApiError('UNSUPPORTED_MEDIA_TYPE');
   return type;
 }
+export function validateImageDimensions(width, height) {
+  if (!Number.isInteger(width) || !Number.isInteger(height) || width < 1 || height < 1
+      || width > IMAGE_LIMITS.dimension || height > IMAGE_LIMITS.dimension || width * height > IMAGE_LIMITS.pixels) {
+    throw new ApiError('INVALID_IMAGE');
+  }
+}
