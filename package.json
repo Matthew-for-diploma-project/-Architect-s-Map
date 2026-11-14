@@ -20,7 +20,9 @@
     "test:db": "node --env-file=.env.test --test tests/integration/*.test.mjs"
   },
   "dependencies": {
-    "pg": "8.23.1"
+    "busboy": "1.6.0",
+    "pg": "8.23.1",
+    "sharp": "0.35.5"
   },
   "devDependencies": {
     "leaflet": "1.9.4",
