@@ -10,6 +10,7 @@ import { randomUUID, randomBytes } from 'node:crypto';
 import { readAuthConfig } from '../../src/backend/auth-config.mjs';
 import { createSessionService, readSessionToken } from '../../src/backend/sessions.mjs';
 import { hashPassword } from '../../src/backend/passwords.mjs';
+import { images, multipart, multipartType, metadata } from '../fixtures/image-files.mjs';
 
 // Fail before connecting if the caller has not explicitly selected a test DB.
 if (process.env.NODE_ENV !== 'test') throw new Error('Для интеграционных тестов нужен NODE_ENV=test.');
@@ -35,6 +36,34 @@ async function startAdapter(overrides = {}) {
   await exited;
   throw new Error('Тестовый адаптер не запустился за 5 секунд.');
 }
+
+test('P19 production Node process persists an authenticated upload with safe metadata; reads remain P20', async () => {
+  const database = createDatabase(), userId = randomUUID();
+  const sessions = createSessionService({ database, config: readAuthConfig({ PUBLIC_ORIGIN: publicOrigin }) });
+  let adapter;
+  try {
+    await database.pool.query('INSERT INTO public.users(id,email,name,password_hash) VALUES($1,$2,$3,$4)',
+      [userId, `p19-process-${userId}@example.test`, 'P19 process fixture', 'P19_TEST_ONLY_NOT_A_LOGIN_HASH']);
+    const issued = await sessions.issue(userId), cookie = issued.cookie.split(';')[0];
+    adapter = await startAdapter(); assert.ok(adapter.url, adapter.output());
+    const response = await fetch(adapter.url + '/api/images', { method: 'POST',
+      headers: { Origin: publicOrigin, Cookie: cookie, 'Content-Type': multipartType }, body: multipart(), signal: AbortSignal.timeout(10000) });
+    assert.equal(response.status, 201);
+    assert.equal(response.headers.get('cache-control'), 'private, no-store'); assert.equal(response.headers.get('x-content-type-options'), 'nosniff');
+    const { image } = await response.json();
+    assert.equal(image.mimeType, 'image/png'); assert.deepEqual([image.width, image.height, image.bounds], [3, 2, metadata.bounds]);
+    assert.equal(image.sizeBytes, images.png.length);
+    assert.ok(!Object.hasOwn(image, 'user_id') && !Object.hasOwn(image, 'fileData'));
+    const { rows: [row] } = await database.pool.query('SELECT user_id,file_data,angle,opacity,locked,revision FROM public.images WHERE id=$1 AND user_id=$2', [image.id, userId]);
+    assert.equal(row.user_id, userId); assert.deepEqual(row.file_data, images.png);
+    assert.deepEqual([row.angle, row.opacity, row.locked, row.revision], [0, .65, false, 1]);
+    assert.equal((await fetch(adapter.url + image.fileUrl, { headers: { Cookie: cookie } })).status, 501);
+    assert.ok(!adapter.output().includes(readSessionToken(cookie))); assert.ok(!adapter.output().includes(config.password));
+  } finally {
+    if (adapter?.child.exitCode === null) { adapter.child.kill('SIGTERM'); await adapter.exited; }
+    await database.pool.query('DELETE FROM public.users WHERE id=$1', [userId]); await database.close();
+  }
+});
 
 test('PostgreSQL 17: connection, role, parameterized query and pool close', async () => {
   const database = createDatabase();
@@ -191,7 +220,7 @@ test('running Node enforces persisted session, expiry and revocation across rest
     assert.equal(authenticated.headers.get('set-cookie'), null); // No automatic renewal.
     assert.ok(!(await authenticated.text()).includes(token));
     assert.equal((await call('/api/images', { method: 'POST', headers: { Origin: 'https://evil.test', Cookie: firstCookie }, body: 'unread' })).status, 403);
-    assert.equal((await call('/api/images', { method: 'POST', headers: { Origin: publicOrigin, Cookie: firstCookie }, body: 'unread' })).status, 501);
+    assert.equal((await call('/api/images', { method: 'POST', headers: { Origin: publicOrigin, Cookie: firstCookie }, body: 'unread' })).status, 415); // P19 is connected; P18 rejects a non-multipart body.
     adapter.child.kill('SIGTERM');
     assert.deepEqual(await adapter.exited, [0, null]);
     const firstOutput = adapter.output();

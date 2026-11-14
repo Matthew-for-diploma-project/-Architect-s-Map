@@ -12,6 +12,7 @@ import { createRegistrationHandler } from '../src/backend/registration.mjs';
 import { createLoginHandler } from '../src/backend/login.mjs';
 import { createMeHandler, createLogoutHandler } from '../src/backend/account-session.mjs';
 import { readAuthRateLimitConfig, createAuthRateLimiter } from '../src/backend/auth-rate-limit.mjs';
+import { createImageUploadHandler } from '../src/backend/image-upload.mjs';
 
 const major = Number(process.versions.node.split('.')[0]);
 if (major < 22) {
@@ -76,6 +77,7 @@ const server = http.createServer(createRequestHandler({
       'auth.login': createLoginHandler({ database, sessions, rateLimiter }),
       'auth.me': createMeHandler(),
       'auth.logout': createLogoutHandler({ sessions, config: authConfig }),
+      'images.create': createImageUploadHandler({ database }),
     },
   }),
 }));
