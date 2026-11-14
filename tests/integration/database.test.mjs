@@ -191,7 +191,7 @@ test('running Node enforces persisted session, expiry and revocation across rest
     assert.equal(authenticated.headers.get('set-cookie'), null); // No automatic renewal.
     assert.ok(!(await authenticated.text()).includes(token));
     assert.equal((await call('/api/images', { method: 'POST', headers: { Origin: 'https://evil.test', Cookie: firstCookie }, body: 'unread' })).status, 403);
-    assert.equal((await call('/api/images', { method: 'POST', headers: { Origin: publicOrigin, Cookie: firstCookie }, body: 'unread' })).status, 501);
+    assert.equal((await call('/api/images', { method: 'POST', headers: { Origin: publicOrigin, Cookie: firstCookie }, body: 'unread' })).status, 415); // P19 is connected; P18 rejects a non-multipart body.
     adapter.child.kill('SIGTERM');
     assert.deepEqual(await adapter.exited, [0, null]);
     const firstOutput = adapter.output();

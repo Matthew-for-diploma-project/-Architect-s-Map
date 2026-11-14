@@ -1,5 +1,5 @@
 // Node-only data access. auth must come from the session service/guard, never
-// from a request body. Image HTTP handlers and content validation follow in P18+.
+// from a request body. P18 validates contents before P19's upload handler.
 import { ApiError } from './http-errors.mjs';
 import { databaseQuery } from './transactions.mjs';
 
@@ -12,7 +12,7 @@ const metadataColumns = `i.id, i.name, i.mime_type, i.size_bytes, i.width, i.hei
   to_char(i.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS created_at,
   to_char(i.updated_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS updated_at`;
 
-function ownerId(auth) {
+export function requireImageOwner(auth) {
   if (!validId(auth?.user?.id) || !validId(auth?.session?.id)) throw new ApiError('AUTH_REQUIRED');
   return auth.user.id;
 }
@@ -63,7 +63,7 @@ function createValues(data) {
   record(data, ['name', 'mimeType', 'fileData', 'width', 'height', 'bounds', 'angle', 'opacity', 'locked']);
   const { name, mimeType, fileData, width, height, angle = 0, opacity = .65, locked = false } = data;
   // These are internal, already validated image fields, not a multipart decoder.
-  // P18 adds full content/range validation before future HTTP handlers call us.
+  // P18 performs full content/range validation before the HTTP upload handler.
   if (typeof name !== 'string' || typeof mimeType !== 'string' || !Buffer.isBuffer(fileData)
       || !Number.isInteger(width) || !Number.isInteger(height) || !Number.isInteger(angle)
       || !Number.isFinite(opacity) || typeof locked !== 'boolean') throw new ApiError('VALIDATION_ERROR');
@@ -85,20 +85,20 @@ export function createImageRepository({ database }) {
   // This repository never begins, commits, retries or releases that transaction.
   return {
     async get(auth, id, { client = database.pool } = {}) {
-      const userId = ownerId(auth);
+      const userId = requireImageOwner(auth);
       const { rows: [row] } = await databaseQuery(client, `SELECT ${metadataColumns}
         FROM image_metadata AS i WHERE i.user_id = $1::uuid AND i.id = $2::uuid`, [userId, imageId(id)]);
       return toImage(found(row));
     },
     async getFile(auth, id, { client = database.pool } = {}) {
-      const userId = ownerId(auth);
+      const userId = requireImageOwner(auth);
       const { rows: [row] } = await databaseQuery(client, `SELECT i.file_data, i.mime_type, i.size_bytes
         FROM images AS i WHERE i.user_id = $1::uuid AND i.id = $2::uuid`, [userId, imageId(id)]);
       found(row);
       return { data: row.file_data, mimeType: row.mime_type, sizeBytes: row.size_bytes };
     },
     async list(auth, options = {}, { client = database.pool } = {}) {
-      const userId = ownerId(auth);
+      const userId = requireImageOwner(auth);
       const { limit, after } = pageOptions(options);
       const { rows } = await databaseQuery(client, `SELECT ${metadataColumns}
         FROM image_metadata AS i WHERE i.user_id = $1::uuid
@@ -110,7 +110,7 @@ export function createImageRepository({ database }) {
       return { images, next: rows.length > limit ? { createdAt: last.createdAt, id: last.id } : null };
     },
     async create(auth, data, { client = database.pool } = {}) {
-      const userId = ownerId(auth);
+      const userId = requireImageOwner(auth);
       const values = [userId, ...createValues(data)];
       const { rows: [row] } = await databaseQuery(client, `INSERT INTO images AS i
         (user_id, name, mime_type, file_data, width, height, south, west, north, east, angle, opacity, locked)
@@ -119,7 +119,7 @@ export function createImageRepository({ database }) {
       return toImage(found(row));
     },
     async update(auth, id, changes, { client = database.pool } = {}) {
-      const userId = ownerId(auth);
+      const userId = requireImageOwner(auth);
       const values = [userId, imageId(id), ...updateValues(changes)];
       // Compare-and-swap in one UPDATE: concurrent writers cannot overwrite a
       // newer revision. Fixed columns only; never interpolate request keys.
@@ -140,7 +140,7 @@ export function createImageRepository({ database }) {
       throw new ApiError('REVISION_CONFLICT');
     },
     async remove(auth, id, { client = database.pool } = {}) {
-      const userId = ownerId(auth);
+      const userId = requireImageOwner(auth);
       const { rows: [row] } = await databaseQuery(client, `DELETE FROM images AS i
         WHERE i.user_id = $1::uuid AND i.id = $2::uuid RETURNING i.id`, [userId, imageId(id)]);
       found(row);
